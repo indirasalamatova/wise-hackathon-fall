@@ -1,0 +1,82 @@
+@import 'tailwindcss';
+
+/*
+ * Unbound design tokens, taken from source_data/ (Canva app screens + home deck).
+ * Forest greens carry structure, brick red marks the one thing to do next,
+ * rose and blush soften every surface around them.
+ */
+@theme {
+  --font-display: 'Unbounded', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Onest', ui-sans-serif, system-ui, sans-serif;
+
+  --color-forest-950: #03100a;
+  --color-forest-900: #072011;
+  --color-forest-800: #0b2416;
+  --color-forest-700: #123a22;
+  --color-forest-600: #2f5640;
+
+  --color-brick-700: #8c2b2b;
+  --color-brick-600: #b84747;
+  --color-brick-400: #e89a9a;
+  --color-wine: #5a2e2e;
+
+  --color-rose-300: #d8a9a9;
+  --color-rose-200: #ecd3d3;
+  --color-rose-100: #f7e1e1;
+  --color-blush: #f9f1f1;
+
+  --color-sage-300: #c9d3bf;
+  --color-sage-200: #e2e6d8;
+  --color-sage-100: #eef0e6;
+
+  --color-ok-700: #24683f;
+  --color-ok-100: #e1f0e6;
+  --color-warn-700: #8a5a12;
+  --color-warn-100: #fbefd5;
+
+  --color-ink: #0b1a12;
+  --color-muted: #5f5a5a;
+
+  --radius-card: 1.25rem;
+
+  --animate-fade-in: fade-in 160ms ease-out;
+  --animate-pop-in: pop-in 180ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
+
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes pop-in {
+    from { opacity: 0; transform: scale(0.96) translateY(-4px); }
+    to { opacity: 1; transform: none; }
+  }
+}
+
+@layer base {
+  html {
+    color: var(--color-ink);
+    background: var(--color-blush);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply font-sans;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-brick-600);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: var(--color-rose-300);
+    color: var(--color-forest-950);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}
