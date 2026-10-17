@@ -276,7 +276,7 @@ export function Chat({
     <Card className="flex min-h-[560px] flex-col overflow-hidden lg:h-[calc(100svh-76px-4rem)]">
       <div className="flex items-center gap-3 border-b border-rose-200 px-5 py-4 sm:px-6">
         <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-forest-950">
-          <LogoMark className="size-7" />
+          <LogoMark className="size-8" />
         </span>
         <div className="min-w-0 flex-1">
           <p className="font-semibold">{t('chat.title')}</p>
