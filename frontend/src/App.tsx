@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from 'react'
 import { GoogleOAuthProvider } from '@react-oauth/google'
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from 'react-router'
 import { AppLayout } from '@/components/layout/AppLayout'
+import { LanguageProvider, useI18n } from '@/i18n'
 import { buttonClass } from '@/components/ui/button-class'
 import { AssistantPage } from '@/pages/app/Assistant'
 import { CostsPage } from '@/pages/app/Costs'
@@ -26,12 +27,13 @@ function ScrollManager() {
 }
 
 function NotFound() {
+  const { t } = useI18n()
   return (
     <div className="grid min-h-svh place-content-center gap-4 bg-blush px-4 text-center">
       <p className="font-display text-6xl font-semibold text-rose-300">404</p>
-      <h1 className="text-xl font-semibold">This page doesn’t exist</h1>
+      <h1 className="text-xl font-semibold">{t('notFound.title')}</h1>
       <Link to="/" className={buttonClass('primary', 'md', 'mx-auto')}>
-        Go to the home page
+        {t('notFound.home')}
       </Link>
     </div>
   )
@@ -44,33 +46,35 @@ function GoogleProvider({ children }: { children: ReactNode }) {
 
 export default function App() {
   return (
-    <GoogleProvider>
-      <BrowserRouter>
-        <ToastProvider>
-          <AuthProvider>
-            <CaseProvider>
-              <ScrollManager />
-              <Routes>
-                <Route path="/" element={<LandingPage />} />
-                <Route path="/login" element={<LoginPage />} />
-                <Route path="/signup" element={<SignupPage />} />
-                <Route path="/app" element={<AppLayout />}>
-                  <Route index element={<AssistantPage />} />
-                  <Route path="assistant" element={<Navigate to="/app" replace />} />
-                  <Route path="journey" element={<JourneyPage />} />
-                  <Route path="documents" element={<DocumentsPage />} />
-                  <Route path="forms/:id" element={<FormViewPage />} />
-                  <Route path="finances" element={<FinancesPage />} />
-                  <Route path="finances/costs" element={<CostsPage />} />
-                  <Route path="todo" element={<TodoPage />} />
-                  <Route path="profile" element={<ProfilePage />} />
-                </Route>
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </CaseProvider>
-          </AuthProvider>
-        </ToastProvider>
-      </BrowserRouter>
-    </GoogleProvider>
+    <LanguageProvider>
+      <GoogleProvider>
+        <BrowserRouter>
+          <ToastProvider>
+            <AuthProvider>
+              <CaseProvider>
+                <ScrollManager />
+                <Routes>
+                  <Route path="/" element={<LandingPage />} />
+                  <Route path="/login" element={<LoginPage />} />
+                  <Route path="/signup" element={<SignupPage />} />
+                  <Route path="/app" element={<AppLayout />}>
+                    <Route index element={<AssistantPage />} />
+                    <Route path="assistant" element={<Navigate to="/app" replace />} />
+                    <Route path="journey" element={<JourneyPage />} />
+                    <Route path="documents" element={<DocumentsPage />} />
+                    <Route path="forms/:id" element={<FormViewPage />} />
+                    <Route path="finances" element={<FinancesPage />} />
+                    <Route path="finances/costs" element={<CostsPage />} />
+                    <Route path="todo" element={<TodoPage />} />
+                    <Route path="profile" element={<ProfilePage />} />
+                  </Route>
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </CaseProvider>
+            </AuthProvider>
+          </ToastProvider>
+        </BrowserRouter>
+      </GoogleProvider>
+    </LanguageProvider>
   )
 }

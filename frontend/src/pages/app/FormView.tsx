@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router'
 import { ArrowLeft, Check, Copy, ExternalLink, Loader2, Printer, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Badge, Card, PageHeader } from '@/components/ui/primitives'
+import { translate, useI18n } from '@/i18n'
 import * as api from '@/lib/api'
 import { cn, shortDate } from '@/lib/format'
 import type { PrefilledForm } from '@/lib/types'
@@ -10,6 +11,7 @@ import { useCase, useToast } from '@/store/context'
 
 function CopyButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false)
+  const { t } = useI18n()
   return (
     <button
       type="button"
@@ -18,7 +20,7 @@ function CopyButton({ value }: { value: string }) {
         setCopied(true)
         setTimeout(() => setCopied(false), 1500)
       }}
-      aria-label="Copy value"
+      aria-label={t('form.copy')}
       className="grid size-8 shrink-0 place-items-center rounded-full text-muted hover:bg-rose-100 hover:text-forest-950 print:hidden"
     >
       {copied ? <Check className="size-4 text-ok-700" /> : <Copy className="size-4" />}
@@ -31,6 +33,7 @@ export function FormViewPage() {
   const { forms, deleteForm } = useCase()
   const { toast } = useToast()
   const navigate = useNavigate()
+  const { t } = useI18n()
   const cached = forms.find((f) => f.id === id)
   const [fetched, setFetched] = useState<{ id: string; form: PrefilledForm | null; error?: string } | null>(null)
 
@@ -39,7 +42,7 @@ export function FormViewPage() {
     let cancelled = false
     api.getForm(id).then(
       (form) => !cancelled && setFetched({ id, form }),
-      (e) => !cancelled && setFetched({ id, form: null, error: e instanceof Error ? e.message : 'Form not found.' }),
+      (e) => !cancelled && setFetched({ id, form: null, error: e instanceof Error ? e.message : translate('form.notFound') }),
     )
     return () => {
       cancelled = true
@@ -52,7 +55,7 @@ export function FormViewPage() {
       <p className="text-sm text-brick-700">{fetched.error}</p>
     ) : (
       <p className="flex items-center gap-2 text-sm text-muted" role="status">
-        <Loader2 className="size-4 animate-spin" aria-hidden /> Loading form…
+        <Loader2 className="size-4 animate-spin" aria-hidden /> {t('form.loading')}
       </p>
     )
 
@@ -61,20 +64,20 @@ export function FormViewPage() {
   return (
     <>
       <Link to="/app/documents" className="mb-4 inline-flex items-center gap-1.5 text-sm font-semibold text-muted hover:text-forest-950 print:hidden">
-        <ArrowLeft className="size-4" aria-hidden /> Documents
+        <ArrowLeft className="size-4" aria-hidden /> {t('form.back')}
       </Link>
       <PageHeader
-        eyebrow={`Prefilled ${shortDate(form.createdAt.slice(0, 10), { day: 'numeric', month: 'short', year: 'numeric' })}`}
+        eyebrow={t('form.prefilled', { date: shortDate(form.createdAt.slice(0, 10), { day: 'numeric', month: 'short', year: 'numeric' }) })}
         title={form.title}
-        subtitle={missing ? `${form.fields.length - missing} of ${form.fields.length} fields filled. Complete the highlighted ones on the official form.` : 'Every field is filled. Check them against your documents before you submit.'}
+        subtitle={missing ? t('form.partial', { filled: form.fields.length - missing, total: form.fields.length }) : t('form.complete')}
         aside={
           <div className="flex flex-wrap gap-2 print:hidden">
             <Button variant="outline" onClick={() => window.print()}>
-              <Printer className="size-4" aria-hidden /> Print
+              <Printer className="size-4" aria-hidden /> {t('form.print')}
             </Button>
             {form.officialUrl && (
               <a href={form.officialUrl} target="_blank" rel="noreferrer" className="inline-flex h-11 items-center gap-2 rounded-full bg-forest-950 px-5 text-sm font-semibold text-white hover:bg-forest-700">
-                Official form <ExternalLink className="size-4" aria-hidden />
+                {t('form.official')} <ExternalLink className="size-4" aria-hidden />
               </a>
             )}
           </div>
@@ -90,31 +93,31 @@ export function FormViewPage() {
                 {f.value ? (
                   <p className="mt-0.5 font-semibold break-words">{f.value}</p>
                 ) : (
-                  <p className="mt-0.5 text-sm text-warn-700">{f.hint ? `Fill in yourself: ${f.hint}` : 'Fill in yourself'}</p>
+                  <p className="mt-0.5 text-sm text-warn-700">{f.hint ? t('form.fillYourselfHint', { hint: f.hint }) : t('form.fillYourself')}</p>
                 )}
               </div>
-              {f.value ? <CopyButton value={f.value} /> : <Badge tone="warn">Missing</Badge>}
+              {f.value ? <CopyButton value={f.value} /> : <Badge tone="warn">{t('form.missing')}</Badge>}
             </li>
           ))}
         </ul>
       </Card>
       <p className="mt-4 text-xs text-muted">
-        Values come from your profile, your analysed passport and your plan. Nothing is guessed: if we couldn’t read a value, the field stays empty.
+        {t('form.source')}
       </p>
       <button
         type="button"
         onClick={async () => {
           try {
             await deleteForm(form.id)
-            toast('Form deleted')
+            toast(t('form.deleted'))
             navigate('/app/documents')
           } catch (e) {
-            toast(e instanceof Error ? e.message : 'Form wasn’t deleted.', 'error')
+            toast(e instanceof Error ? e.message : t('form.deleteFailed'), 'error')
           }
         }}
         className="mt-6 inline-flex items-center gap-1.5 text-[13px] text-muted underline underline-offset-2 hover:text-brick-700 print:hidden"
       >
-        <Trash2 className="size-3.5" aria-hidden /> Delete this draft
+        <Trash2 className="size-3.5" aria-hidden /> {t('form.delete')}
       </button>
     </>
   )

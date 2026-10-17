@@ -3,19 +3,20 @@ import { useNavigate } from 'react-router'
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
 import { Avatar, Card, CardTitle, Field, Input, PageHeader, Toggle } from '@/components/ui/primitives'
+import { useI18n, type Key } from '@/i18n'
 import type { ProfilePatch, Settings, User } from '@/lib/types'
 import { useAuth, useCase, useToast } from '@/store/context'
 
-const fields: { key: keyof ProfilePatch & keyof User; label: string; placeholder: string }[] = [
-  { key: 'fullName', label: 'Full name', placeholder: 'As in your passport' },
-  { key: 'citizenship', label: 'Citizenship', placeholder: 'e.g. Kazakhstan' },
-  { key: 'passport', label: 'Passport', placeholder: 'e.g. ends 4417, valid to Mar 2031' },
-  { key: 'address', label: 'Address', placeholder: 'e.g. Budapest VIII, Hungary' },
-  { key: 'residenceStatus', label: 'Status', placeholder: 'e.g. Residence permit for study, to Jan 2027' },
-  { key: 'studies', label: 'Studies or work', placeholder: 'e.g. BSc Business Informatics, to Jun 2029' },
+const fields: { key: keyof ProfilePatch & keyof User; label: Key; placeholder: Key }[] = [
+  { key: 'fullName', label: 'profile.field.fullName', placeholder: 'profile.field.fullName.ph' },
+  { key: 'citizenship', label: 'profile.field.citizenship', placeholder: 'profile.field.citizenship.ph' },
+  { key: 'passport', label: 'profile.field.passport', placeholder: 'profile.field.passport.ph' },
+  { key: 'address', label: 'profile.field.address', placeholder: 'profile.field.address.ph' },
+  { key: 'residenceStatus', label: 'profile.field.residenceStatus', placeholder: 'profile.field.residenceStatus.ph' },
+  { key: 'studies', label: 'profile.field.studies', placeholder: 'profile.field.studies.ph' },
 ]
 
-function SettingRow({ k, title, hint }: { k: keyof Omit<Settings, 'language'>; title: string; hint?: string }) {
+function SettingRow({ k, title, hint }: { k: keyof Settings; title: string; hint?: string }) {
   const { settings, setSetting } = useAuth()
   return (
     <div className="flex items-center justify-between gap-4 py-2.5">
@@ -34,9 +35,10 @@ function EditDialog({ open, onClose, user }: { open: boolean; onClose: () => voi
   const [form, setForm] = useState(() => Object.fromEntries(fields.map((f) => [f.key, String(user[f.key] ?? '')])) as Record<string, string>)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { t } = useI18n()
 
   return (
-    <Dialog open={open} onClose={() => !saving && onClose()} title="Edit details" description="Only you see these. The assistant uses them to answer about your case.">
+    <Dialog open={open} onClose={() => !saving && onClose()} title={t('profile.edit')} description={t('profile.editDescription')}>
       <form
         className="flex flex-col gap-4"
         onSubmit={async (e) => {
@@ -45,21 +47,21 @@ function EditDialog({ open, onClose, user }: { open: boolean; onClose: () => voi
           setError(null)
           try {
             await updateUser(form as ProfilePatch)
-            toast('Details saved', 'success')
+            toast(t('profile.saved'), 'success')
             onClose()
           } catch (err) {
-            setError(err instanceof Error ? err.message : 'Details weren’t saved. Try again.')
+            setError(err instanceof Error ? err.message : t('profile.saveFailed'))
           } finally {
             setSaving(false)
           }
         }}
       >
         {fields.map((f) => (
-          <Field key={f.key} label={f.label} htmlFor={`ed-${f.key}`}>
+          <Field key={f.key} label={t(f.label)} htmlFor={`ed-${f.key}`}>
             <Input
               id={`ed-${f.key}`}
               value={form[f.key]}
-              placeholder={f.placeholder}
+              placeholder={t(f.placeholder)}
               required={f.key === 'fullName'}
               maxLength={f.key === 'fullName' ? 120 : 200}
               onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
@@ -73,10 +75,10 @@ function EditDialog({ open, onClose, user }: { open: boolean; onClose: () => voi
         )}
         <div className="mt-2 flex justify-end gap-2">
           <Button variant="outline" onClick={onClose} disabled={saving}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button type="submit" loading={saving}>
-            Save changes
+            {t('profile.save')}
           </Button>
         </div>
       </form>
@@ -92,6 +94,7 @@ export function ProfilePage() {
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
+  const { t, locale } = useI18n()
   if (!user) return null
 
   const downloadData = () => {
@@ -102,17 +105,17 @@ export function ProfilePage() {
     a.download = 'unbound-my-data.json'
     a.click()
     URL.revokeObjectURL(a.href)
-    toast('Your data is downloading')
+    toast(t('profile.downloading'))
   }
 
   return (
     <>
       <PageHeader
-        eyebrow="Account"
-        title="My profile"
+        eyebrow={t('profile.eyebrow')}
+        title={t('profile.title')}
         aside={
           <Button variant="outline" onClick={() => setEditing(true)}>
-            Edit details
+            {t('profile.edit')}
           </Button>
         }
       />
@@ -125,18 +128,18 @@ export function ProfilePage() {
               <div className="min-w-0">
                 <p className="font-display truncate text-xl font-semibold">{user.fullName}</p>
                 <p className="truncate text-[13px] text-muted">
-                  {user.email} · member since {new Date(user.memberSince).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
+                  {t('profile.memberSince', { email: user.email, date: new Date(user.memberSince).toLocaleDateString(locale, { month: 'long', year: 'numeric' }) })}
                 </p>
               </div>
             </div>
             <dl className="mt-6 grid grid-cols-[120px_minmax(0,1fr)] gap-y-3.5 text-sm">
               {fields.slice(1).map((f) => (
                 <div key={f.key} className="contents">
-                  <dt className="text-muted">{f.label}</dt>
+                  <dt className="text-muted">{t(f.label)}</dt>
                   <dd className={user[f.key] ? 'font-semibold' : 'text-muted/70'}>
                     {String(user[f.key] || '') || (
                       <button type="button" onClick={() => setEditing(true)} className="underline underline-offset-2 hover:text-forest-950">
-                        Add
+                        {t('common.add')}
                       </button>
                     )}
                   </dd>
@@ -146,11 +149,11 @@ export function ProfilePage() {
           </Card>
 
           <Card className="p-6">
-            <CardTitle>Privacy and data</CardTitle>
-            <p className="mt-1 text-sm text-muted">Download everything we hold about you, or delete your account and all your files.</p>
+            <CardTitle>{t('profile.privacy')}</CardTitle>
+            <p className="mt-1 text-sm text-muted">{t('profile.privacyBody')}</p>
             <div className="mt-5 flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={downloadData}>
-                Download my data
+                {t('profile.download')}
               </Button>
               <Button
                 variant="outline"
@@ -160,20 +163,20 @@ export function ProfilePage() {
                   navigate('/')
                 }}
               >
-                Log out
+                {t('profile.logOut')}
               </Button>
               <Button variant="accent" size="sm" onClick={() => setDeleting(true)}>
-                Delete account
+                {t('profile.deleteAccount')}
               </Button>
             </div>
           </Card>
         </div>
 
         <Card className="h-fit p-6">
-          <CardTitle className="mb-2">Notifications</CardTitle>
-          <SettingRow k="push" title="Push notifications" />
-          <SettingRow k="email" title="Email" hint="Weekly summary and urgent deadlines" />
-          <SettingRow k="sms" title="SMS for urgent deadlines" hint="Document expiry and appointment day only" />
+          <CardTitle className="mb-2">{t('profile.notifications')}</CardTitle>
+          <SettingRow k="push" title={t('profile.push')} />
+          <SettingRow k="email" title={t('profile.email')} hint={t('profile.emailHint')} />
+          <SettingRow k="sms" title={t('profile.sms')} hint={t('profile.smsHint')} />
         </Card>
       </div>
 
@@ -182,12 +185,12 @@ export function ProfilePage() {
       <Dialog
         open={deleting}
         onClose={() => !deleteBusy && setDeleting(false)}
-        title="Delete your account?"
-        description={`This deletes your profile, ${documents.length} document${documents.length === 1 ? '' : 's'}, tasks and payment history. It can’t be undone.`}
+        title={t('profile.deleteTitle')}
+        description={t('profile.deleteBody', { count: documents.length })}
       >
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={() => setDeleting(false)} disabled={deleteBusy}>
-            Keep account
+            {t('profile.keep')}
           </Button>
           <Button
             variant="accent"
@@ -197,14 +200,14 @@ export function ProfilePage() {
               try {
                 await deleteAccount()
                 navigate('/')
-                toast('Your account was deleted')
+                toast(t('profile.deleted'))
               } catch (e) {
                 setDeleteBusy(false)
-                toast(e instanceof Error ? e.message : 'Account wasn’t deleted. Try again.', 'error')
+                toast(e instanceof Error ? e.message : t('profile.deleteFailed'), 'error')
               }
             }}
           >
-            Delete account
+            {t('profile.deleteAccount')}
           </Button>
         </div>
       </Dialog>

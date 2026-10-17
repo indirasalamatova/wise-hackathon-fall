@@ -1,98 +1,96 @@
-/** Static reference data (countries, visa costs, stages). Everything about the user comes from the API. */
+/** Static reference data (countries, visa costs, stages). Everything about the user comes from the API.
+ *  Text is stored as translation keys (src/i18n); country names come from Intl.DisplayNames. */
+import type { Key } from '@/i18n'
 import type { CountryCode, JourneyStage } from './types'
 
 export const journeyStages: JourneyStage[] = [
-  { key: 'apply', label: 'Apply', description: 'Choosing a pathway and preparing your application.' },
-  { key: 'arrive', label: 'Arrive', description: 'Registering your address and collecting your residence card.' },
-  { key: 'stay', label: 'Stay', description: 'Keeping your permit valid and renewing it on time.' },
-  { key: 'transition', label: 'Transition', description: 'Changing status after your studies or for a new job.' },
+  { key: 'apply', label: 'stage.apply', description: 'stage.apply.desc' },
+  { key: 'arrive', label: 'stage.arrive', description: 'stage.arrive.desc' },
+  { key: 'stay', label: 'stage.stay', description: 'stage.stay.desc' },
+  { key: 'transition', label: 'stage.transition', description: 'stage.transition.desc' },
 ]
 
 export const budgetCountries: {
   code: CountryCode
-  name: string
-  permit: string
+  permit: Key
   living: number
 }[] = [
-  { code: 'HU', name: 'Hungary', permit: 'Job-seeking permit (9 months)', living: 780 },
-  { code: 'PL', name: 'Poland', permit: 'Residence to look for work', living: 860 },
-  { code: 'CZ', name: 'Czechia', permit: 'Job-seeker residence', living: 950 },
-  { code: 'ES', name: 'Spain', permit: 'Job-search residence (12 mo)', living: 1080 },
-  { code: 'DE', name: 'Germany', permit: 'Opportunity Card', living: 1250 },
+  { code: 'HU', permit: 'permit.HU', living: 780 },
+  { code: 'PL', permit: 'permit.PL', living: 860 },
+  { code: 'CZ', permit: 'permit.CZ', living: 950 },
+  { code: 'ES', permit: 'permit.ES', living: 1080 },
+  { code: 'DE', permit: 'permit.DE', living: 1250 },
 ]
 
-export const proofOfFunds: { code: CountryCode; label: string; required: number }[] = [
-  { code: 'HU', label: 'Hungary · study renewal', required: 3600 },
-  { code: 'DE', label: 'Germany · Opportunity Card', required: 13200 },
-  { code: 'NL', label: 'Netherlands · orientation year', required: 16200 },
-  { code: 'ES', label: 'Spain · job-search residence', required: 7200 },
+/** `label` takes the country name as {country}. */
+export const proofOfFunds: { code: CountryCode; label: Key; required: number }[] = [
+  { code: 'HU', label: 'funds.HU', required: 3600 },
+  { code: 'DE', label: 'funds.DE', required: 13200 },
+  { code: 'NL', label: 'funds.NL', required: 16200 },
+  { code: 'ES', label: 'funds.ES', required: 7200 },
 ]
 
 export interface CostItem {
   id: string
-  label: string
+  label: Key
   unit?: number
   qty?: boolean
   official?: boolean
 }
 
+/** `label` takes the country name as {country}. */
 export const visaOptions: {
   id: string
   code: CountryCode
-  label: string
+  label: Key
   items: (CostItem & { defaultOn: boolean; defaultQty?: number })[]
 }[] = [
   {
     id: 'de-opportunity',
     code: 'DE',
-    label: 'Germany · Opportunity Card',
+    label: 'visa.de-opportunity',
     items: [
-      { id: 'fee', label: 'Application fee', unit: 75, official: true, defaultOn: true },
-      { id: 'translations', label: 'Certified translations', unit: 25, qty: true, defaultOn: true, defaultQty: 3 },
-      { id: 'apostilles', label: 'Apostilles', unit: 20, qty: true, defaultOn: false, defaultQty: 2 },
-      { id: 'insurance', label: 'Health insurance (months)', unit: 45, qty: true, defaultOn: true, defaultQty: 12 },
-      { id: 'courier', label: 'Courier for originals', unit: 35, defaultOn: false },
-      { id: 'travel', label: 'Travel to appointment', unit: 40, defaultOn: true },
+      { id: 'fee', label: 'cost.fee', unit: 75, official: true, defaultOn: true },
+      { id: 'translations', label: 'cost.translations', unit: 25, qty: true, defaultOn: true, defaultQty: 3 },
+      { id: 'apostilles', label: 'cost.apostilles', unit: 20, qty: true, defaultOn: false, defaultQty: 2 },
+      { id: 'insurance', label: 'cost.insurance', unit: 45, qty: true, defaultOn: true, defaultQty: 12 },
+      { id: 'courier', label: 'cost.courier', unit: 35, defaultOn: false },
+      { id: 'travel', label: 'cost.travel', unit: 40, defaultOn: true },
     ],
   },
   {
     id: 'hu-renewal',
     code: 'HU',
-    label: 'Hungary · study permit renewal',
+    label: 'visa.hu-renewal',
     items: [
-      { id: 'fee', label: 'Renewal fee (HUF 18,000)', unit: 47, official: true, defaultOn: true },
-      { id: 'insurance', label: 'Health insurance (months)', unit: 52, qty: true, defaultOn: true, defaultQty: 12 },
-      { id: 'translations', label: 'Certified translations', unit: 22, qty: true, defaultOn: false, defaultQty: 1 },
-      { id: 'photo', label: 'Biometric photo', unit: 8, defaultOn: true },
+      { id: 'fee', label: 'cost.renewalFee', unit: 47, official: true, defaultOn: true },
+      { id: 'insurance', label: 'cost.insurance', unit: 52, qty: true, defaultOn: true, defaultQty: 12 },
+      { id: 'translations', label: 'cost.translations', unit: 22, qty: true, defaultOn: false, defaultQty: 1 },
+      { id: 'photo', label: 'cost.photo', unit: 8, defaultOn: true },
     ],
   },
   {
     id: 'nl-orientation',
     code: 'NL',
-    label: 'Netherlands · orientation year',
+    label: 'visa.nl-orientation',
     items: [
-      { id: 'fee', label: 'Application fee', unit: 254, official: true, defaultOn: true },
-      { id: 'apostilles', label: 'Apostilles', unit: 30, qty: true, defaultOn: true, defaultQty: 2 },
-      { id: 'insurance', label: 'Health insurance (months)', unit: 130, qty: true, defaultOn: true, defaultQty: 12 },
-      { id: 'travel', label: 'Travel to appointment', unit: 60, defaultOn: true },
+      { id: 'fee', label: 'cost.fee', unit: 254, official: true, defaultOn: true },
+      { id: 'apostilles', label: 'cost.apostilles', unit: 30, qty: true, defaultOn: true, defaultQty: 2 },
+      { id: 'insurance', label: 'cost.insurance', unit: 130, qty: true, defaultOn: true, defaultQty: 12 },
+      { id: 'travel', label: 'cost.travel', unit: 60, defaultOn: true },
     ],
   },
 ]
 
-export const destinations: { code: CountryCode; name: string; cities: string }[] = [
-  { code: 'DE', name: 'Germany', cities: 'Berlin, Munich…' },
-  { code: 'HU', name: 'Hungary', cities: 'Budapest, Szeged…' },
-  { code: 'NL', name: 'Netherlands', cities: 'Amsterdam, Delft…' },
-  { code: 'AT', name: 'Austria', cities: 'Vienna, Graz…' },
-  { code: 'PL', name: 'Poland', cities: 'Warsaw, Kraków…' },
-  { code: 'ES', name: 'Spain', cities: 'Madrid, Barcelona…' },
-  { code: 'FR', name: 'France', cities: 'Paris, Lyon…' },
-  { code: 'IT', name: 'Italy', cities: 'Milan, Bologna…' },
+export const destinations: { code: CountryCode; cities: Key }[] = [
+  { code: 'DE', cities: 'city.DE' },
+  { code: 'HU', cities: 'city.HU' },
+  { code: 'NL', cities: 'city.NL' },
+  { code: 'AT', cities: 'city.AT' },
+  { code: 'PL', cities: 'city.PL' },
+  { code: 'ES', cities: 'city.ES' },
+  { code: 'FR', cities: 'city.FR' },
+  { code: 'IT', cities: 'city.IT' },
 ]
 
-export const suggestedQuestions = [
-  'I’m a Russian citizen and want to visit Hungary as a tourist',
-  'Check my documents and tell me what’s missing',
-  'Which countries can you help with right now?',
-  'Prefill my application form',
-]
+export const suggestedQuestions: Key[] = ['suggest.1', 'suggest.2', 'suggest.3', 'suggest.4']

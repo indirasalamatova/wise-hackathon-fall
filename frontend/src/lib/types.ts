@@ -1,5 +1,7 @@
+import type { Key } from '@/i18n'
+
 export type CountryCode =
-  | 'HU' | 'DE' | 'NL' | 'AT' | 'PL' | 'ES' | 'FR' | 'IT' | 'CZ' | 'KZ' | 'GB'
+  | 'HU' | 'DE' | 'NL' | 'AT' | 'PL' | 'ES' | 'FR' | 'IT' | 'CZ' | 'KZ' | 'GB' | 'RU'
 
 export type StageKey = 'apply' | 'arrive' | 'stay' | 'transition'
 
@@ -20,7 +22,7 @@ export interface User {
   monthlyBudget: number
   savings: number
   journeyStage: StageKey
-  settings: Omit<Settings, 'language'>
+  settings: Settings
 }
 
 export type ProfilePatch = Partial<
@@ -163,12 +165,13 @@ export interface PrefilledForm {
 
 export interface JourneyStage {
   key: StageKey
-  label: string
-  description: string
+  /** Translation keys (src/i18n). */
+  label: Key
+  description: Key
 }
 
+/** Notification settings, saved on the server. The UI language is a device setting (see src/i18n). */
 export interface Settings {
-  language: 'EN' | 'HU' | 'RU'
   push: boolean
   email: boolean
   sms: boolean

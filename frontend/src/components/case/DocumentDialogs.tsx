@@ -3,6 +3,7 @@ import { CircleAlert, FileUp } from 'lucide-react'
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/Button'
 import { Field, Input, Progress } from '@/components/ui/primitives'
+import { useI18n } from '@/i18n'
 import { MAX_UPLOAD_MB } from '@/lib/api'
 import { cn, fileSize, money } from '@/lib/format'
 import { documentCategories, type DocumentCategory } from '@/lib/types'
@@ -35,6 +36,7 @@ export function UploadDialog({ open, onClose }: { open: boolean; onClose: () => 
   const [expiresOn, setExpiresOn] = useState('')
   const [progress, setProgress] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const { t } = useI18n()
 
   const busy = progress !== null
   const reset = () => {
@@ -58,22 +60,22 @@ export function UploadDialog({ open, onClose }: { open: boolean; onClose: () => 
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!file) return setError('Choose a file to upload.')
+    if (!file) return setError(t('upload.chooseFile'))
     setError(null)
     setProgress(0)
     try {
       const doc = await uploadDocument({ file, title: title.trim() || titleFromFile(file.name), category, expiresOn: expiresOn || undefined }, setProgress)
-      toast(`${doc.title} uploaded`, 'success')
+      toast(t('upload.uploaded', { title: doc.title }), 'success')
       reset()
       onClose()
     } catch (err) {
       setProgress(null)
-      setError(err instanceof Error ? err.message : 'Upload failed. Try again.')
+      setError(err instanceof Error ? err.message : t('upload.failed'))
     }
   }
 
   return (
-    <Dialog open={open} onClose={close} title="Upload a document" description={`PDF, JPG or PNG, up to ${MAX_UPLOAD_MB} MB. Only you can open it.`}>
+    <Dialog open={open} onClose={close} title={t('upload.title')} description={t('upload.description', { mb: MAX_UPLOAD_MB })}>
       <form onSubmit={submit} className="flex flex-col gap-4">
         <button
           type="button"
@@ -99,8 +101,8 @@ export function UploadDialog({ open, onClose }: { open: boolean; onClose: () => 
             <FileUp className="size-5" aria-hidden />
           </span>
           <span className="min-w-0">
-            <span className="block truncate font-semibold">{file ? file.name : 'Drop a file here or choose one'}</span>
-            <span className="block text-[13px] text-muted">{file ? fileSize(file.size) : 'Your passport, permit, insurance, contracts…'}</span>
+            <span className="block truncate font-semibold">{file ? file.name : t('upload.drop')}</span>
+            <span className="block text-[13px] text-muted">{file ? fileSize(file.size) : t('upload.dropHint')}</span>
           </span>
         </button>
         <input
@@ -116,11 +118,11 @@ export function UploadDialog({ open, onClose }: { open: boolean; onClose: () => 
           }}
         />
 
-        <Field label="Name" htmlFor="doc-title">
-          <Input id="doc-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Passport" maxLength={120} disabled={busy} />
+        <Field label={t('upload.name')} htmlFor="doc-title">
+          <Input id="doc-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t('upload.namePlaceholder')} maxLength={120} disabled={busy} />
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Type" htmlFor="doc-category">
+          <Field label={t('upload.type')} htmlFor="doc-category">
             <select
               id="doc-category"
               value={category}
@@ -129,29 +131,31 @@ export function UploadDialog({ open, onClose }: { open: boolean; onClose: () => 
               className="h-12 w-full rounded-2xl border border-rose-300 bg-white px-4 text-[15px] outline-none focus:border-forest-950"
             >
               {documentCategories.map((c) => (
-                <option key={c}>{c}</option>
+                <option key={c} value={c}>
+                  {t(`docCategory.${c}`)}
+                </option>
               ))}
             </select>
           </Field>
-          <Field label="Expires on" htmlFor="doc-expiry" hint="Optional. We’ll warn you 60 days before.">
+          <Field label={t('upload.expires')} htmlFor="doc-expiry" hint={t('upload.expiresHint')}>
             <Input id="doc-expiry" type="date" value={expiresOn} onChange={(e) => setExpiresOn(e.target.value)} disabled={busy} />
           </Field>
         </div>
 
         {busy && (
           <div aria-live="polite">
-            <Progress value={progress} label="Upload progress" />
-            <p className="mt-1.5 text-[13px] text-muted">{progress < 100 ? `Uploading · ${progress}%` : 'Saving…'}</p>
+            <Progress value={progress} label={t('upload.progress')} />
+            <p className="mt-1.5 text-[13px] text-muted">{progress < 100 ? t('upload.uploading', { pct: progress }) : t('upload.saving')}</p>
           </div>
         )}
         <FormError error={error} />
 
         <div className="mt-2 flex justify-end gap-2">
           <Button variant="outline" onClick={close} disabled={busy}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button type="submit" variant="accent" loading={busy} disabled={!file}>
-            Upload
+            {t('upload.submit')}
           </Button>
         </div>
       </form>
@@ -178,6 +182,7 @@ export function PayDialog({
   const [loading, setLoading] = useState(false)
   const [paid, setPaid] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { t } = useI18n()
 
   const pay = async () => {
     setLoading(true)
@@ -186,7 +191,7 @@ export function PayDialog({
       await onPay()
       setPaid(true)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'The payment didn’t go through. Try again.')
+      setError(e instanceof Error ? e.message : t('pay.failed'))
     } finally {
       setLoading(false)
     }
@@ -199,28 +204,28 @@ export function PayDialog({
   }
 
   return (
-    <Dialog open={open} onClose={close} title={paid ? 'Payment recorded' : 'Pay with Wise'} description={what}>
+    <Dialog open={open} onClose={close} title={paid ? t('pay.recorded') : t('pay.title')} description={what}>
       {paid ? (
         <>
-          <p className="text-[15px]">{money(amount)} is in your payments history.</p>
+          <p className="text-[15px]">{t('pay.inHistory', { amount: money(amount) })}</p>
           <div className="mt-6 flex justify-end">
-            <Button onClick={close}>Done</Button>
+            <Button onClick={close}>{t('common.done')}</Button>
           </div>
         </>
       ) : (
         <>
           <div className="rounded-2xl bg-forest-950 px-5 py-5 text-white">
-            <p className="text-[13px] text-rose-300">You pay</p>
+            <p className="text-[13px] text-rose-300">{t('pay.youPay')}</p>
             <p className="font-display mt-1 text-[34px] leading-none font-semibold">{money(amount)}</p>
           </div>
-          <p className="mt-4 text-sm text-muted">Prototype: this records the payment in your history. No money moves yet.</p>
+          <p className="mt-4 text-sm text-muted">{t('pay.prototype')}</p>
           <FormError error={error} />
           <div className="mt-6 flex justify-end gap-2">
             <Button variant="outline" onClick={close} disabled={loading}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button variant="accent" onClick={pay} loading={loading}>
-              Pay {money(amount)}
+              {t('pay.submit', { amount: money(amount) })}
             </Button>
           </div>
         </>

@@ -6,6 +6,7 @@ import { Card, CardTitle, PageHeader, Segmented } from '@/components/ui/primitiv
 import { DocumentList } from '@/components/case/DocumentList'
 import { UploadDialog } from '@/components/case/DocumentDialogs'
 import { EXPIRY_WARNING_DAYS, expiryOf } from '@/components/case/expiry'
+import { useI18n } from '@/i18n'
 import { cn, fileSize } from '@/lib/format'
 import { documentCategories, type DocumentCategory } from '@/lib/types'
 import { useCase } from '@/store/context'
@@ -17,6 +18,7 @@ export function DocumentsPage() {
   const [uploading, setUploading] = useState(false)
   const [filter, setFilter] = useState<Filter>('all')
   const [category, setCategory] = useState<DocumentCategory | 'all'>('all')
+  const { t } = useI18n()
 
   const attention = documents.filter((d) => ['expired', 'soon'].includes(expiryOf(d.expiresOn).state))
   const list = (filter === 'attention' ? attention : documents).filter((d) => category === 'all' || d.category === category)
@@ -26,12 +28,14 @@ export function DocumentsPage() {
   return (
     <>
       <PageHeader
-        eyebrow={documents.length ? `${documents.length} on file · ${attention.length} ${attention.length === 1 ? 'needs' : 'need'} attention` : undefined}
-        title="Documents"
-        subtitle="Every file you upload, in one place. Add an expiry date and we’ll warn you before it runs out."
+        eyebrow={
+          documents.length ? `${t('docs.onFile', { count: documents.length })} · ${t('docs.needAttention', { count: attention.length })}` : undefined
+        }
+        title={t('docs.title')}
+        subtitle={t('docs.subtitle')}
         aside={
           <Button variant="accent" onClick={() => setUploading(true)}>
-            <FileUp className="size-4" aria-hidden /> Upload document
+            <FileUp className="size-4" aria-hidden /> {t('docs.upload')}
           </Button>
         }
       />
@@ -41,10 +45,10 @@ export function DocumentsPage() {
           <span className="grid size-14 place-items-center rounded-2xl bg-rose-100 text-brick-600">
             <FileUp className="size-6" aria-hidden />
           </span>
-          <h2 className="mt-5 text-lg font-semibold">Upload your first document</h2>
-          <p className="mt-1 max-w-sm text-sm text-muted">Start with your passport or residence permit. You can open, track and delete every file here.</p>
+          <h2 className="mt-5 text-lg font-semibold">{t('docs.firstTitle')}</h2>
+          <p className="mt-1 max-w-sm text-sm text-muted">{t('docs.firstBody')}</p>
           <Button variant="accent" className="mt-6" onClick={() => setUploading(true)}>
-            Upload document
+            {t('docs.upload')}
           </Button>
         </Card>
       ) : (
@@ -52,16 +56,16 @@ export function DocumentsPage() {
           <Card className="p-6">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
               <Segmented
-                label="Filter documents"
+                label={t('docs.filter')}
                 value={filter}
                 onChange={setFilter}
                 options={[
-                  { value: 'all', label: `All (${documents.length})` },
-                  { value: 'attention', label: `Needs attention (${attention.length})` },
+                  { value: 'all', label: t('docs.filterAll', { count: documents.length }) },
+                  { value: 'attention', label: t('docs.filterAttention', { count: attention.length }) },
                 ]}
               />
               <label className="sr-only" htmlFor="doc-filter-category">
-                Type
+                {t('docs.type')}
               </label>
               <select
                 id="doc-filter-category"
@@ -69,15 +73,17 @@ export function DocumentsPage() {
                 onChange={(e) => setCategory(e.target.value as DocumentCategory | 'all')}
                 className="h-9 rounded-full border-2 border-rose-200 bg-white px-3 text-[13px] font-semibold outline-none focus:border-forest-950"
               >
-                <option value="all">All types</option>
+                <option value="all">{t('docs.allTypes')}</option>
                 {documentCategories.map((c) => (
-                  <option key={c}>{c}</option>
+                  <option key={c} value={c}>
+                    {t(`docCategory.${c}`)}
+                  </option>
                 ))}
               </select>
             </div>
             {list.length === 0 ? (
               <p className="py-10 text-center text-sm text-muted">
-                {filter === 'attention' ? `Nothing expires in the next ${EXPIRY_WARNING_DAYS} days.` : 'No documents of this type yet.'}
+                {filter === 'attention' ? t('docs.nothingExpires', { days: EXPIRY_WARNING_DAYS }) : t('docs.noneOfType')}
               </p>
             ) : (
               <DocumentList documents={list} />
@@ -86,7 +92,7 @@ export function DocumentsPage() {
 
           <aside className="flex flex-col gap-4">
             <Card className="p-6">
-              <CardTitle>By type</CardTitle>
+              <CardTitle>{t('docs.byType')}</CardTitle>
               <ul className="mt-3 flex flex-col gap-1">
                 {counts.map(([c, n]) => (
                   <li key={c}>
@@ -98,17 +104,17 @@ export function DocumentsPage() {
                         category === c && 'bg-rose-100 font-semibold',
                       )}
                     >
-                      {c} <span className="text-muted">{n}</span>
+                      {t(`docCategory.${c}`)} <span className="text-muted">{n}</span>
                     </button>
                   </li>
                 ))}
               </ul>
-              <p className="mt-3 border-t border-rose-200 pt-3 text-[13px] text-muted">{fileSize(totalSize)} stored</p>
+              <p className="mt-3 border-t border-rose-200 pt-3 text-[13px] text-muted">{t('docs.stored', { size: fileSize(totalSize) })}</p>
             </Card>
 
             {forms.length > 0 && (
               <Card className="p-6">
-                <CardTitle>Prefilled forms</CardTitle>
+                <CardTitle>{t('docs.forms')}</CardTitle>
                 <ul className="mt-3 flex flex-col gap-1">
                   {forms.map((f) => {
                     const missing = f.fields.filter((x) => x.status === 'missing').length
@@ -116,7 +122,7 @@ export function DocumentsPage() {
                       <li key={f.id}>
                         <Link to={`/app/forms/${f.id}`} className="block rounded-lg px-2 py-1.5 hover:bg-blush">
                           <span className="block truncate text-sm font-semibold">{f.title}</span>
-                          <span className="text-xs text-muted">{missing ? `${missing} field${missing > 1 ? 's' : ''} to complete` : 'All fields filled'}</span>
+                          <span className="text-xs text-muted">{missing ? t('docs.fieldsToComplete', { count: missing }) : t('docs.allFilled')}</span>
                         </Link>
                       </li>
                     )
@@ -127,10 +133,10 @@ export function DocumentsPage() {
 
             <div className="flex flex-col gap-3 px-2 text-[13px] text-muted">
               <p className="flex items-center gap-2">
-                <Lock className="size-4 shrink-0" aria-hidden /> Stored privately in your account
+                <Lock className="size-4 shrink-0" aria-hidden /> {t('docs.private')}
               </p>
               <p className="flex items-center gap-2">
-                <ShieldCheck className="size-4 shrink-0" aria-hidden /> Only you can open your files
+                <ShieldCheck className="size-4 shrink-0" aria-hidden /> {t('docs.onlyYou')}
               </p>
             </div>
           </aside>

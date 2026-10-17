@@ -4,33 +4,35 @@ import { Logo } from '@/components/brand/Logo'
 import { Badge } from '@/components/ui/primitives'
 import { ButtonLink } from '@/components/ui/Button'
 import { PublicHeader } from '@/components/layout/PublicHeader'
+import { useI18n, type Key } from '@/i18n'
 import { cn } from '@/lib/format'
 import { OptionsWizard } from './OptionsWizard'
 
-const steps = [
-  { title: 'Tell us your situation', body: 'Passport, destination and purpose. Only the questions that matter, in about two minutes.' },
-  { title: 'Get your pathway', body: 'The right permit, a personal checklist, fees and every deadline on one timeline.' },
-  { title: 'Prepare and check', body: 'Upload once. AI checks names, dates and formats before you submit anything.' },
-  { title: 'Stay on track', body: 'Reminders before renewals, help when you change status, and a plan for what comes next.' },
+const steps: { title: Key; body: Key }[] = [
+  { title: 'landing.step1.title', body: 'landing.step1.body' },
+  { title: 'landing.step2.title', body: 'landing.step2.body' },
+  { title: 'landing.step3.title', body: 'landing.step3.body' },
+  { title: 'landing.step4.title', body: 'landing.step4.body' },
 ]
 
-const lifecycle = ['Apply', 'Arrive', 'Stay', 'Transition', 'Next chapter']
+const lifecycle: Key[] = ['stage.apply', 'stage.arrive', 'stage.stay', 'stage.transition', 'landing.nextChapter']
 
-const trust = [
-  { icon: Lock, title: 'Encrypted documents', body: 'Only you and offices you approve' },
-  { icon: UserCheck, title: 'You approve every step', body: 'Nothing submitted without you' },
-  { icon: Users, title: 'Advisers on call', body: 'Licensed help for complex cases' },
-  { icon: Server, title: 'Data stored in the EU', body: 'GDPR compliant' },
+const trust: { icon: typeof Lock; title: Key; body: Key }[] = [
+  { icon: Lock, title: 'landing.trust.encrypted.title', body: 'landing.trust.encrypted.body' },
+  { icon: UserCheck, title: 'landing.trust.approve.title', body: 'landing.trust.approve.body' },
+  { icon: Users, title: 'landing.trust.advisers.title', body: 'landing.trust.advisers.body' },
+  { icon: Server, title: 'landing.trust.eu.title', body: 'landing.trust.eu.body' },
 ]
 
-const footer = {
-  Product: ['How it works', 'Check my options', 'Travel map', 'Pricing', 'For employers'],
-  Resources: ['Help centre', 'Country guides', 'Deadline calculator', 'Blog'],
-  Company: ['About us', 'Careers', 'Partners', 'Contact'],
-  Legal: ['Privacy', 'Terms', 'Cookies', 'Accessibility'],
-}
+const footer: [Key, Key[]][] = [
+  ['landing.footer.product', ['landing.howItWorks', 'landing.checkOptions', 'landing.footer.travelMap', 'landing.footer.pricing', 'public.forEmployers']],
+  ['landing.footer.resources', ['landing.footer.help', 'landing.footer.guides', 'landing.footer.calculator', 'landing.footer.blog']],
+  ['landing.footer.company', ['landing.footer.about', 'landing.footer.careers', 'landing.footer.partners', 'landing.footer.contact']],
+  ['landing.footer.legal', ['landing.footer.privacy', 'landing.footer.terms', 'landing.footer.cookies', 'landing.footer.accessibility']],
+]
 
 function Hero() {
+  const { t } = useI18n()
   return (
     <section className="relative isolate overflow-hidden bg-forest-950 text-white">
       <img src={heroWing} alt="" className="absolute inset-0 -z-10 h-full w-full object-cover object-[60%_65%]" />
@@ -39,32 +41,32 @@ function Hero() {
       <PublicHeader overlay />
 
       <div className="mx-auto flex min-h-[min(820px,100svh)] max-w-[1240px] flex-col justify-center px-4 pt-28 pb-16 sm:px-8">
-        <p className="text-xs font-semibold tracking-[0.25em] text-rose-300 uppercase">For students, expats and international hires</p>
+        <p className="text-xs font-semibold tracking-[0.25em] text-rose-300 uppercase">{t('landing.eyebrow')}</p>
         <h1 className="font-display mt-6 text-[clamp(44px,8.4vw,112px)] leading-[0.95] font-semibold tracking-[-0.03em]">
-          Move abroad.
+          {t('landing.title1')}
           <br />
-          <span className="text-rose-300">Stay unbound.</span>
+          <span className="text-rose-300">{t('landing.title2')}</span>
         </h1>
         <p className="mt-8 max-w-[34rem] text-lg leading-relaxed text-sage-100/90">
-          One case for your whole immigration journey, from the first application to your next chapter. We tell you exactly what to do next.
+          {t('landing.lead')}
         </p>
         <div className="mt-9 flex flex-wrap gap-3">
           <ButtonLink to="/#try" variant="accent" size="lg">
-            Check my options
+            {t('landing.checkOptions')}
           </ButtonLink>
           <ButtonLink to="/#how" variant="ghost" size="lg" className="border-2 border-white/30 text-white hover:bg-white/10">
-            How it works
+            {t('landing.howItWorks')}
           </ButtonLink>
         </div>
         <ul className="mt-14 flex flex-wrap gap-x-8 gap-y-3 text-sm text-sage-100/80">
           <li className="flex items-center gap-2">
-            <ShieldCheck className="size-4 text-rose-300" aria-hidden /> Free to start
+            <ShieldCheck className="size-4 text-rose-300" aria-hidden /> {t('landing.freeToStart')}
           </li>
           <li className="flex items-center gap-2">
-            <Lock className="size-4 text-rose-300" aria-hidden /> Documents encrypted end to end
+            <Lock className="size-4 text-rose-300" aria-hidden /> {t('landing.encrypted')}
           </li>
           <li className="flex items-center gap-2">
-            <Wallet className="size-4 text-rose-300" aria-hidden /> Visa fees and proof of funds with Wise
+            <Wallet className="size-4 text-rose-300" aria-hidden /> {t('landing.wiseFees')}
           </li>
         </ul>
       </div>
@@ -73,24 +75,24 @@ function Hero() {
 }
 
 function Why() {
+  const { t } = useI18n()
   return (
     <section id="how" className="bg-blush py-24">
       <div className="mx-auto max-w-[1240px] px-4 sm:px-8">
-        <p className="text-xs font-semibold tracking-[0.25em] text-brick-600 uppercase">Why Unbound</p>
+        <p className="text-xs font-semibold tracking-[0.25em] text-brick-600 uppercase">{t('landing.why.eyebrow')}</p>
         <h2 className="font-display mt-5 max-w-[22ch] text-[clamp(30px,4vw,48px)] leading-[1.08] font-semibold tracking-tight text-forest-950">
-          Immigration is scattered across a dozen websites. We turn it into one case.
+          {t('landing.why.title')}
         </h2>
         <p className="mt-6 max-w-[62ch] text-[17px] leading-relaxed text-muted">
-          Today you are the project manager of your own move: embassy pages, university emails, deadlines and the same documents uploaded
-          again and again. Unbound remembers your case, knows what is done and what is missing, and tells you the next step.
+          {t('landing.why.body')}
         </p>
 
         <ol className="mt-14 grid gap-px overflow-hidden rounded-card border border-rose-200 bg-rose-200 sm:grid-cols-2 lg:grid-cols-4">
           {steps.map((s, i) => (
             <li key={s.title} className="bg-white p-7">
               <span className="font-display text-[40px] leading-none font-semibold text-rose-300">{String(i + 1).padStart(2, '0')}</span>
-              <h3 className="mt-6 text-lg font-semibold text-forest-950">{s.title}</h3>
-              <p className="mt-2 text-[15px] leading-relaxed text-muted">{s.body}</p>
+              <h3 className="mt-6 text-lg font-semibold text-forest-950">{t(s.title)}</h3>
+              <p className="mt-2 text-[15px] leading-relaxed text-muted">{t(s.body)}</p>
             </li>
           ))}
         </ol>
@@ -99,13 +101,13 @@ function Why() {
           <p className="font-display flex flex-wrap items-center gap-x-4 gap-y-2 text-lg font-medium text-forest-950/50 sm:text-xl">
             {lifecycle.map((l, i) => (
               <span key={l} className="flex items-center gap-4">
-                <span className={cn(l === 'Stay' && 'rounded-full bg-forest-950 px-4 py-1 text-rose-300')}>{l}</span>
+                <span className={cn(l === 'stage.stay' && 'rounded-full bg-forest-950 px-4 py-1 text-rose-300')}>{t(l)}</span>
                 {i < lifecycle.length - 1 && <span aria-hidden>·</span>}
               </span>
             ))}
           </p>
           <ButtonLink to="/#try" variant="primary" size="lg">
-            Try it now
+            {t('landing.tryNow')}
           </ButtonLink>
         </div>
       </div>
@@ -114,17 +116,17 @@ function Why() {
 }
 
 function TryIt() {
+  const { t } = useI18n()
   return (
     <section id="try" className="bg-forest-900 py-24 text-white">
       <div className="mx-auto grid max-w-[1240px] gap-12 px-4 sm:px-8 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:items-center">
         <div>
-          <p className="text-xs font-semibold tracking-[0.25em] text-rose-300 uppercase">Try it in 30 seconds</p>
+          <p className="text-xs font-semibold tracking-[0.25em] text-rose-300 uppercase">{t('landing.try.eyebrow')}</p>
           <h2 className="font-display mt-5 text-[clamp(30px,4vw,48px)] leading-[1.08] font-semibold tracking-tight">
-            Where does your next chapter begin?
+            {t('landing.try.title')}
           </h2>
           <p className="mt-6 max-w-[42ch] text-[17px] leading-relaxed text-sage-100/80">
-            Pick a country and a reason. We show the likely pathway, how long it takes and what you will need. Save it to get your full
-            checklist.
+            {t('landing.try.body')}
           </p>
         </div>
         <OptionsWizard />
@@ -134,68 +136,71 @@ function TryIt() {
 }
 
 function Features() {
+  const { t } = useI18n()
   return (
     <section id="features" className="bg-sage-100 py-24">
       <div className="mx-auto max-w-[1240px] px-4 sm:px-8">
-        <p className="text-xs font-semibold tracking-[0.25em] text-brick-600 uppercase">New on Unbound</p>
+        <p className="text-xs font-semibold tracking-[0.25em] text-brick-600 uppercase">{t('landing.features.eyebrow')}</p>
         <h2 className="font-display mt-5 max-w-[20ch] text-[clamp(30px,4vw,48px)] leading-[1.08] font-semibold tracking-tight text-forest-950">
-          Built for the whole journey, not just the visa.
+          {t('landing.features.title')}
         </h2>
 
         <div className="mt-12 grid gap-4 lg:grid-cols-3 lg:grid-rows-[auto_auto]">
           <article className="rounded-card bg-forest-950 p-7 text-white lg:row-span-2">
-            <Badge tone="accent">New</Badge>
+            <Badge tone="accent">{t('landing.badge.new')}</Badge>
             <FileSearch className="mt-6 size-7 text-rose-300" aria-hidden />
-            <h3 className="mt-4 text-xl font-semibold">AI document check</h3>
+            <h3 className="mt-4 text-xl font-semibold">{t('landing.f.docCheck.title')}</h3>
             <p className="mt-2 text-[15px] leading-relaxed text-rose-300">
-              Checks names, dates, issue window and format against your case before the office does.
+              {t('landing.f.docCheck.body')}
             </p>
             <ul className="mt-8 flex flex-col gap-2.5">
-              {[
-                ['Passport', 'Valid to 2031', 'ok'],
-                ['Bank statement', 'Meets minimum', 'ok'],
-                ['Insurance', 'Ends too early', 'danger'],
-              ].map(([n, s, t]) => (
+              {(
+                [
+                  ['landing.f.docCheck.passport', 'landing.f.docCheck.passportOk', 'ok'],
+                  ['landing.f.docCheck.bank', 'landing.f.docCheck.bankOk', 'ok'],
+                  ['landing.f.docCheck.insurance', 'landing.f.docCheck.insuranceBad', 'danger'],
+                ] as const
+              ).map(([n, s, tone]) => (
                 <li key={n} className="flex items-center justify-between rounded-xl bg-white/[0.06] px-4 py-3">
-                  <span className="text-sm font-semibold">{n}</span>
-                  <Badge tone={t as 'ok' | 'danger'}>{s}</Badge>
+                  <span className="text-sm font-semibold">{t(n)}</span>
+                  <Badge tone={tone}>{t(s)}</Badge>
                 </li>
               ))}
             </ul>
           </article>
 
           <article className="rounded-card bg-white p-7">
-            <Badge tone="accent">New</Badge>
+            <Badge tone="accent">{t('landing.badge.new')}</Badge>
             <Wallet className="mt-6 size-7 text-brick-600" aria-hidden />
-            <h3 className="mt-4 text-xl font-semibold text-forest-950">Pay fees with Wise</h3>
+            <h3 className="mt-4 text-xl font-semibold text-forest-950">{t('landing.f.wise.title')}</h3>
             <p className="mt-2 text-[15px] leading-relaxed text-muted">
-              Visa and permit fees in local currency, proof of funds attached with consent.
+              {t('landing.f.wise.body')}
             </p>
           </article>
 
           <article className="rounded-card bg-white p-7">
-            <Badge tone="accent">New</Badge>
+            <Badge tone="accent">{t('landing.badge.new')}</Badge>
             <Map className="mt-6 size-7 text-brick-600" aria-hidden />
-            <h3 className="mt-4 text-xl font-semibold text-forest-950">Travel map</h3>
-            <p className="mt-2 text-[15px] leading-relaxed text-muted">Where your passport and permit let you go, even mid-renewal.</p>
+            <h3 className="mt-4 text-xl font-semibold text-forest-950">{t('landing.f.map.title')}</h3>
+            <p className="mt-2 text-[15px] leading-relaxed text-muted">{t('landing.f.map.body')}</p>
           </article>
 
           <article className="rounded-card border-2 border-dashed border-sage-300 p-7">
             <Badge tone="neutral" className="bg-sage-200">
-              Coming soon
+              {t('landing.badge.soon')}
             </Badge>
             <Users className="mt-6 size-7 text-forest-600" aria-hidden />
-            <h3 className="mt-4 text-xl font-semibold text-forest-950">Family cases</h3>
-            <p className="mt-2 text-[15px] leading-relaxed text-muted">Partner and children on one plan with linked deadlines.</p>
+            <h3 className="mt-4 text-xl font-semibold text-forest-950">{t('landing.f.family.title')}</h3>
+            <p className="mt-2 text-[15px] leading-relaxed text-muted">{t('landing.f.family.body')}</p>
           </article>
 
           <article className="rounded-card border-2 border-dashed border-sage-300 p-7">
             <Badge tone="neutral" className="bg-sage-200">
-              Coming soon
+              {t('landing.badge.soon')}
             </Badge>
             <Building2 className="mt-6 size-7 text-forest-600" aria-hidden />
-            <h3 className="mt-4 text-xl font-semibold text-forest-950">Unbound for employers</h3>
-            <p className="mt-2 text-[15px] leading-relaxed text-muted">HR sees each hire’s permit status and next compliance actions.</p>
+            <h3 className="mt-4 text-xl font-semibold text-forest-950">{t('landing.f.employers.title')}</h3>
+            <p className="mt-2 text-[15px] leading-relaxed text-muted">{t('landing.f.employers.body')}</p>
           </article>
         </div>
 
@@ -204,8 +209,8 @@ function Features() {
             <li key={title} className="flex gap-3.5">
               <Icon className="mt-0.5 size-5 shrink-0 text-brick-600" aria-hidden />
               <div>
-                <p className="font-semibold text-forest-950">{title}</p>
-                <p className="text-sm text-muted">{body}</p>
+                <p className="font-semibold text-forest-950">{t(title)}</p>
+                <p className="text-sm text-muted">{t(body)}</p>
               </div>
             </li>
           ))}
@@ -216,22 +221,23 @@ function Features() {
 }
 
 function Closing() {
+  const { t } = useI18n()
   return (
     <footer className="bg-forest-950 text-white">
       <div className="mx-auto max-w-[1240px] px-4 pt-24 sm:px-8">
         <div className="flex flex-col items-start gap-8 border-b border-white/10 pb-20 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h2 className="font-display max-w-[18ch] text-[clamp(32px,4.4vw,56px)] leading-[1.05] font-semibold tracking-tight">
-              Your next chapter starts with one case.
+              {t('landing.closing.title')}
             </h2>
-            <p className="mt-5 text-[17px] text-sage-100/80">Create a free account, answer a few questions and get your personal plan today.</p>
+            <p className="mt-5 text-[17px] text-sage-100/80">{t('landing.closing.body')}</p>
           </div>
           <div className="flex flex-wrap justify-center gap-3">
             <ButtonLink to="/signup" variant="accent" size="lg">
-              Create free account
+              {t('landing.closing.create')}
             </ButtonLink>
             <ButtonLink to="/#try" variant="ghost" size="lg" className="border-2 border-white/30 text-white hover:bg-white/10">
-              Check my options
+              {t('landing.checkOptions')}
             </ButtonLink>
           </div>
         </div>
@@ -240,34 +246,34 @@ function Closing() {
           <div>
             <Logo />
             <p className="mt-4 max-w-[30ch] text-sm text-sage-100/70">
-              One persistent case for your immigration journey: apply, arrive, stay, transition.
+              {t('landing.footer.tagline')}
             </p>
             <form
               onSubmit={(e) => e.preventDefault()}
               className="mt-6 flex max-w-xs overflow-hidden rounded-full border border-white/20 focus-within:border-rose-300"
             >
               <label htmlFor="news" className="sr-only">
-                Email for monthly rule changes
+                {t('landing.footer.newsLabel')}
               </label>
               <input
                 id="news"
                 type="email"
-                placeholder="Rule changes, monthly"
+                placeholder={t('landing.footer.newsPlaceholder')}
                 className="min-w-0 flex-1 bg-transparent px-4 text-sm text-white placeholder:text-sage-100/50 outline-none focus-visible:outline-none"
               />
               <button type="submit" className="bg-rose-300 px-4 py-2.5 text-sm font-semibold text-forest-950 hover:bg-rose-100">
-                Subscribe
+                {t('landing.footer.subscribe')}
               </button>
             </form>
           </div>
-          {Object.entries(footer).map(([group, links]) => (
+          {footer.map(([group, links]) => (
             <div key={group}>
-              <p className="text-sm font-semibold text-rose-300">{group}</p>
+              <p className="text-sm font-semibold text-rose-300">{t(group)}</p>
               <ul className="mt-4 flex flex-col gap-2.5 text-sm text-sage-100/70">
                 {links.map((l) => (
                   <li key={l}>
                     <a href="#" className="hover:text-white">
-                      {l}
+                      {t(l)}
                     </a>
                   </li>
                 ))}
@@ -277,8 +283,8 @@ function Closing() {
         </div>
 
         <div className="flex flex-col gap-2 border-t border-white/10 py-6 text-xs text-sage-100/60 sm:flex-row sm:justify-between">
-          <p>© 2026 Unbound, Budapest</p>
-          <p>Unbound is not a law firm. Information is guidance only; for legal advice, book a licensed adviser.</p>
+          <p>{t('landing.footer.copyright')}</p>
+          <p>{t('landing.footer.disclaimer')}</p>
         </div>
       </div>
     </footer>

@@ -4,6 +4,7 @@
  * so pages never see backend field names. Every call is scoped to the signed-in
  * user by the bearer token http.ts attaches.
  */
+import { translate } from '@/i18n/core'
 import { ApiError, getBlob, request, streamEvents, upload } from './http'
 import type {
   AppNotification,
@@ -131,7 +132,7 @@ interface ApiNotification {
 
 /* -------------------------------------------------------------- adapters */
 
-export type ServerSettings = Omit<Settings, 'language'>
+export type ServerSettings = Settings
 
 const settingKeys: Record<keyof ServerSettings, keyof ApiUser> = {
   push: 'notify_push',
@@ -298,8 +299,8 @@ export async function uploadDocument(
   onProgress: (pct: number) => void,
 ) {
   // Checked here too, so a wrong file fails before the upload starts.
-  if (!ACCEPTED.includes(input.file.type)) throw new ApiError('Upload a PDF, JPG or PNG file.')
-  if (input.file.size > MAX_UPLOAD_MB * 1024 * 1024) throw new ApiError(`This file is over ${MAX_UPLOAD_MB} MB. Compress it or upload a single page.`)
+  if (!ACCEPTED.includes(input.file.type)) throw new ApiError(translate('error.fileType'))
+  if (input.file.size > MAX_UPLOAD_MB * 1024 * 1024) throw new ApiError(translate('error.fileTooBig', { mb: MAX_UPLOAD_MB }))
   const form = new FormData()
   form.append('file', input.file)
   form.append('title', input.title)

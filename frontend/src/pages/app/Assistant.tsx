@@ -2,11 +2,13 @@ import { Link } from 'react-router'
 import { Chat } from '@/components/chat/Chat'
 import { Badge, Card, CardTitle, DateTile } from '@/components/ui/primitives'
 import { expiryOf } from '@/components/case/expiry'
+import { useI18n } from '@/i18n'
 import { daysUntil, relativeDays, shortDate } from '@/lib/format'
 import { useCase } from '@/store/context'
 
 export function AssistantPage() {
   const { tasks, documents } = useCase()
+  const { t, tOr, language } = useI18n()
   const upcoming = tasks
     .filter((t) => !t.done && t.due && daysUntil(t.due) >= 0)
     .sort((a, b) => a.due!.localeCompare(b.due!))
@@ -18,12 +20,22 @@ export function AssistantPage() {
 
   // The single most urgent real thing: an expiring document, the next deadline, or getting started.
   const next = renew
-    ? { title: `Renew your ${renew.title.toLowerCase()}`, body: `${expiryOf(renew.expiresOn).label}. Upload the new one when you have it.`, to: '/app/documents', cta: 'Open documents' }
+    ? {
+        title: t('assistant.renew.title', { doc: language === 'EN' ? renew.title.toLowerCase() : renew.title }),
+        body: t('assistant.renew.body', { expiry: expiryOf(renew.expiresOn).label }),
+        to: '/app/documents',
+        cta: t('assistant.renew.cta'),
+      }
     : nextTask
-      ? { title: nextTask.title, body: `Due ${shortDate(nextTask.due!, { weekday: 'short', day: 'numeric', month: 'short' })}, ${relativeDays(nextTask.due!)}.`, to: '/app/todo', cta: 'Open to-do list' }
+      ? {
+          title: nextTask.title,
+          body: t('assistant.task.body', { date: shortDate(nextTask.due!, { weekday: 'short', day: 'numeric', month: 'short' }), relative: relativeDays(nextTask.due!) }),
+          to: '/app/todo',
+          cta: t('assistant.task.cta'),
+        }
       : documents.length === 0
-        ? { title: 'Upload your first document', body: 'Start with your passport or residence permit, and add its expiry date.', to: '/app/documents', cta: 'Upload document' }
-        : { title: 'Plan your next step', body: 'Add a task with a due date and it shows up here.', to: '/app/todo', cta: 'Add a task' }
+        ? { title: t('assistant.first.title'), body: t('assistant.first.body'), to: '/app/documents', cta: t('assistant.first.cta') }
+        : { title: t('assistant.plan.title'), body: t('assistant.plan.body'), to: '/app/todo', cta: t('assistant.plan.cta') }
 
   return (
     // Increased right column width (e.g., 320px / 340px) to make the panel wider
@@ -34,7 +46,7 @@ export function AssistantPage() {
       <aside className="flex w-full flex-col gap-4">
         <Card tone="dark" className="w-full p-6">
           <Badge tone="accent" className="h-[22px] text-[11px]">
-            Next step
+            {t('assistant.nextStep')}
           </Badge>
           <h2 className="mt-3 text-lg leading-snug font-semibold">{next.title}</h2>
           <p className="mt-4 text-[13px] text-rose-300">{next.body}</p>
@@ -45,22 +57,22 @@ export function AssistantPage() {
 
         <Card className="w-full p-6">
           <div className="mb-4 flex items-center justify-between">
-            <CardTitle>Coming up</CardTitle>
+            <CardTitle>{t('assistant.comingUp')}</CardTitle>
             <Link to="/app/todo" className="text-[13px] font-semibold underline underline-offset-2">
-              All tasks
+              {t('assistant.allTasks')}
             </Link>
           </div>
           {upcoming.length === 0 ? (
-            <p className="text-sm text-muted">No deadlines ahead. Add a task to plan your next step.</p>
+            <p className="text-sm text-muted">{t('assistant.noDeadlines')}</p>
           ) : (
             <ul className="flex flex-col gap-4">
-              {upcoming.map((t) => (
-                <li key={t.id} className="flex items-center gap-3.5">
-                  <DateTile iso={t.due!} />
+              {upcoming.map((task) => (
+                <li key={task.id} className="flex items-center gap-3.5">
+                  <DateTile iso={task.due!} />
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold">{t.title}</p>
+                    <p className="truncate text-sm font-semibold">{task.title}</p>
                     <p className="text-xs text-muted">
-                      {t.category} · {relativeDays(t.due!)}
+                      {tOr(`taskCategory.${task.category}`, task.category)} · {relativeDays(task.due!)}
                     </p>
                   </div>
                 </li>

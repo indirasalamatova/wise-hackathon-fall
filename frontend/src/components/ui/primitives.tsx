@@ -1,5 +1,6 @@
 import { forwardRef, type HTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react'
 import { Check } from 'lucide-react'
+import { useI18n } from '@/i18n'
 import { cn } from '@/lib/format'
 
 /* ---------------------------------------------------------------- Card */
@@ -261,12 +262,13 @@ export function Avatar({ text, src, size = 'md' }: { text: string; src?: string;
 /* ------------------------------------------------------------ DateTile */
 
 export function DateTile({ iso }: { iso: string }) {
+  const { locale } = useI18n()
   const [y, m, d] = iso.split('-').map(Number)
   const date = new Date(y, m - 1, d)
   return (
     <span className="grid size-[52px] shrink-0 place-content-center rounded-xl bg-rose-100 text-center leading-none text-forest-950">
       <span className="text-lg font-bold">{d}</span>
-      <span className="mt-1 text-[10px] font-semibold">{date.toLocaleDateString('en-GB', { month: 'short' }).toUpperCase()}</span>
+      <span className="mt-1 text-[10px] font-semibold">{date.toLocaleDateString(locale, { month: 'short' }).toUpperCase()}</span>
     </span>
   )
 }
