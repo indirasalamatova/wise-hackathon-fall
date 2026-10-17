@@ -99,4 +99,4 @@ and is imported unverified. Review it against the listed official sources before
 ## Tests
 
 - `tests/test_rules.py`: the deterministic rules (dates, MRZ, fees, requirement checks, form fill).
-  Run with `pip install -r requirements-dev.txt` first.
+  `npm test` from the repo root (the compose image includes `requirements-dev.txt`).

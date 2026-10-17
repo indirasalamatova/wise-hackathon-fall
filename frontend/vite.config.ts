@@ -9,6 +9,8 @@ export default defineConfig(({ mode }) => {
   const root = loadEnv(mode, fileURLToPath(new URL('..', import.meta.url)), '')
   return {
     plugins: [react(), tailwindcss()],
+    // The API only allows this origin (CORS_ORIGINS), so fail instead of silently moving to 5174.
+    server: { port: 5173, strictPort: true },
     resolve: {
       alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
     },
