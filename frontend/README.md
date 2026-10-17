@@ -42,6 +42,7 @@ and the API only returns rows owned by the caller.
 | Payments | `GET/POST /api/payments` (records a simulated Wise payment; no money moves) |
 | Notifications | `GET /api/notifications`, `POST /api/notifications/{id}/read`, `POST /api/notifications/mark-all-read` |
 | Assistant | `GET/POST/DELETE /api/chat/sessions`, `GET /api/chat/sessions/{id}/messages`, `POST /api/chat/sessions/{id}/messages` (server-sent events) |
+| Explore (3D visa map) | `GET /api/explore/map`, `GET /api/explore/countries/{code}`, `GET/POST/DELETE /api/explore/favorites` |
 | Document analysis, plans, forms | `POST /api/documents/{id}/analyze`, `GET /api/plans`, `GET/DELETE /api/forms/{id}`, `GET /api/guidelines/coverage` |
 
 Uploads: PDF, JPG or PNG up to 10 MB, checked by file contents, not the name. Re-uploading the same
@@ -71,4 +72,6 @@ src/
 ```
 
 Routes: `/`, `/login`, `/signup`, `/app` (assistant), `/app/journey`, `/app/documents`,
-`/app/finances`, `/app/finances/costs`, `/app/todo`, `/app/profile`.
+`/app/finances`, `/app/finances/costs`, `/app/todo`, `/app/profile`, `/app/explore` (also `/explore`).
+The explore globe (`react-globe.gl`, three.js) is code-split and loads only on that page; country
+shapes are `public/geo/countries-110m.json` (Natural Earth, public domain).

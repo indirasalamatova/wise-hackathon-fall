@@ -26,7 +26,13 @@ import type {
   StageKey,
   Task,
   TaskCategory,
+  TravelProfile,
+  TravelPurpose,
   User,
+  VisaDecision,
+  VisaMap,
+  CountryVisaDetail,
+  DataSource,
 } from './types'
 
 export { ApiError }
@@ -48,6 +54,9 @@ interface ApiUser {
   monthly_budget_eur: number
   savings_eur: number
   journey_stage: string
+  nationality_code: string
+  residence_code: string
+  travel_purpose: string
   notify_push: boolean
   notify_email: boolean
   notify_sms: boolean
@@ -150,6 +159,9 @@ const profileKeys: Record<keyof ProfilePatch, keyof ApiUser> = {
   monthlyBudget: 'monthly_budget_eur',
   savings: 'savings_eur',
   journeyStage: 'journey_stage',
+  nationalityCode: 'nationality_code',
+  residenceCode: 'residence_code',
+  travelPurpose: 'travel_purpose',
 }
 
 const initialsOf = (name: string) =>
@@ -177,6 +189,9 @@ const toUser = (u: ApiUser): User => ({
   monthlyBudget: u.monthly_budget_eur,
   savings: u.savings_eur,
   journeyStage: u.journey_stage as StageKey,
+  nationalityCode: u.nationality_code,
+  residenceCode: u.residence_code,
+  travelPurpose: u.travel_purpose as TravelPurpose,
   settings: { push: u.notify_push, email: u.notify_email, sms: u.notify_sms },
 })
 
@@ -369,3 +384,111 @@ export async function getChatMessages(id: string): Promise<ChatMessage[]> {
 
 export const sendChatMessage = (id: string, message: string, onEvent: (e: ChatEvent) => void, signal?: AbortSignal) =>
   streamEvents<ChatEvent>(`/api/chat/sessions/${id}/messages`, { message }, onEvent, signal)
+
+/* --------------------------------------------------------------- explore */
+
+interface ApiDecision {
+  code: string
+  status: VisaDecision['status']
+  basis: VisaDecision['basis']
+  stay_days: number | null
+  notes: string[]
+  has_guideline?: boolean
+}
+
+interface ApiProfile {
+  origin: string | null
+  origin_source: TravelProfile['originSource']
+  residence: string | null
+  purpose: TravelPurpose
+  source: { title: string; url: string; as_of: string; licence: string }
+}
+
+interface ApiGuideline {
+  status: 'current' | 'stale' | 'missing'
+  reason: string
+  visa_type: string
+  verified_at: string | null
+  summary?: string
+  max_stay_days?: number | null
+  processing_days_min?: number | null
+  processing_days_max?: number | null
+  requirements?: { title: string; description: string; mandatory: boolean }[]
+  fees?: { title: string; amount: string | null; currency: string }[]
+  official_links?: { title: string; url: string }[]
+  sources?: { title: string; url: string }[]
+}
+
+const toDecision = (d: ApiDecision): VisaDecision => ({
+  code: d.code,
+  status: d.status,
+  basis: d.basis,
+  stayDays: d.stay_days ?? undefined,
+  notes: d.notes,
+  hasGuideline: !!d.has_guideline,
+})
+
+const toSource = (s: ApiProfile['source']): DataSource => ({ title: s.title, url: s.url, asOf: s.as_of, licence: s.licence })
+
+const toTravelProfile = (p: ApiProfile): TravelProfile => ({
+  origin: p.origin ?? undefined,
+  originSource: p.origin_source,
+  residence: p.residence ?? undefined,
+  purpose: p.purpose,
+})
+
+/** Overrides for the map; anything left out comes from the profile. `residence: ''` means no permit. */
+export interface ExploreQuery {
+  origin?: string
+  residence?: string
+  purpose?: TravelPurpose
+}
+
+const exploreQuery = (q: ExploreQuery) => {
+  const params = new URLSearchParams()
+  if (q.origin) params.set('origin', q.origin)
+  if (q.residence !== undefined) params.set('residence', q.residence)
+  if (q.purpose) params.set('purpose', q.purpose)
+  const s = params.toString()
+  return s ? `?${s}` : ''
+}
+
+export async function getVisaMap(q: ExploreQuery = {}): Promise<VisaMap> {
+  const r = await request<ApiProfile & { passports: string[]; countries: ApiDecision[] }>(`/api/explore/map${exploreQuery(q)}`)
+  return { ...toTravelProfile(r), source: toSource(r.source), passports: r.passports, countries: r.countries.map(toDecision) }
+}
+
+export async function getCountryVisa(code: string, q: ExploreQuery = {}): Promise<CountryVisaDetail> {
+  const r = await request<
+    ApiProfile & { decision: ApiDecision; guideline: ApiGuideline | null; indicative: { category: string; stay_days: number | null; raw: string } | null; favorite: boolean }
+  >(`/api/explore/countries/${code}${exploreQuery(q)}`)
+  const g = r.guideline
+  return {
+    ...toTravelProfile(r),
+    decision: toDecision({ ...r.decision, has_guideline: g?.status === 'current' }),
+    guideline: g
+      ? {
+          status: g.status,
+          reason: g.reason,
+          visaType: g.visa_type,
+          verifiedAt: g.verified_at ?? undefined,
+          summary: g.summary,
+          maxStayDays: g.max_stay_days ?? undefined,
+          processingDays: g.processing_days_min != null || g.processing_days_max != null ? [g.processing_days_min ?? null, g.processing_days_max ?? null] : undefined,
+          requirements: g.requirements ?? [],
+          fees: g.fees ?? [],
+          officialLinks: g.official_links ?? [],
+          sources: g.sources ?? [],
+        }
+      : undefined,
+    indicative: r.indicative ? { category: r.indicative.category, stayDays: r.indicative.stay_days ?? undefined, raw: r.indicative.raw } : undefined,
+    source: toSource(r.source),
+    favorite: r.favorite,
+  }
+}
+
+export const listFavorites = () => request<string[]>('/api/explore/favorites')
+
+export const addFavorite = (code: string) => request<null>('/api/explore/favorites', { method: 'POST', body: { country_code: code } })
+
+export const removeFavorite = (code: string) => request<null>(`/api/explore/favorites/${code}`, { method: 'DELETE' })

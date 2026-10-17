@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
 import { Avatar, Card, CardTitle, Field, Input, PageHeader, Toggle } from '@/components/ui/primitives'
@@ -94,7 +94,7 @@ export function ProfilePage() {
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
-  const { t, locale } = useI18n()
+  const { t, locale, country } = useI18n()
   if (!user) return null
 
   const downloadData = () => {
@@ -145,7 +145,28 @@ export function ProfilePage() {
                   </dd>
                 </div>
               ))}
+              {(
+                [
+                  ['explore.passport', user.nationalityCode && country(user.nationalityCode)],
+                  ['explore.residence', user.residenceCode && country(user.residenceCode)],
+                  ['explore.purpose', t(`explore.purpose.${user.travelPurpose}`)],
+                ] as const
+              ).map(([label, value]) => (
+                <div key={label} className="contents">
+                  <dt className="text-muted">{t(label)}</dt>
+                  <dd className={value ? 'font-semibold' : 'text-muted/70'}>
+                    {value || (
+                      <Link to="/app/explore" className="underline underline-offset-2 hover:text-forest-950">
+                        {t('common.add')}
+                      </Link>
+                    )}
+                  </dd>
+                </div>
+              ))}
             </dl>
+            <Link to="/app/explore" className="mt-4 inline-block text-[13px] font-semibold underline underline-offset-2">
+              {t('profile.travelOnMap')}
+            </Link>
           </Card>
 
           <Card className="p-6">

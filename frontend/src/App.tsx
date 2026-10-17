@@ -7,6 +7,7 @@ import { buttonClass } from '@/components/ui/button-class'
 import { AssistantPage } from '@/pages/app/Assistant'
 import { CostsPage } from '@/pages/app/Costs'
 import { DocumentsPage } from '@/pages/app/Documents'
+import { ExplorePage } from '@/pages/app/Explore'
 import { FormViewPage } from '@/pages/app/FormView'
 import { FinancesPage } from '@/pages/app/Finances'
 import { JourneyPage } from '@/pages/app/Journey'
@@ -61,6 +62,7 @@ export default function App() {
                     <Route index element={<AssistantPage />} />
                     <Route path="assistant" element={<Navigate to="/app" replace />} />
                     <Route path="journey" element={<JourneyPage />} />
+                    <Route path="explore" element={<ExplorePage />} />
                     <Route path="documents" element={<DocumentsPage />} />
                     <Route path="forms/:id" element={<FormViewPage />} />
                     <Route path="finances" element={<FinancesPage />} />
@@ -68,6 +70,7 @@ export default function App() {
                     <Route path="todo" element={<TodoPage />} />
                     <Route path="profile" element={<ProfilePage />} />
                   </Route>
+                  <Route path="/explore" element={<Navigate to="/app/explore" replace />} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </CaseProvider>

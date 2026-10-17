@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useLocation, useNavigate } from 'react-router'
 import Markdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { ArrowRight, Check, ChevronDown, CircleAlert, History, Loader2, Plus, Square, Trash2 } from 'lucide-react'
@@ -158,9 +158,19 @@ export function Chat() {
   const loading = !!current && loaded.for !== current
   const setMessages = (fn: (ms: ChatMessage[]) => ChatMessage[]) => setLoaded((l) => ({ ...l, list: fn(l.list) }))
   const [busy, setBusy] = useState(false)
-  const [draft, setDraft] = useState('')
+  const location = useLocation()
+  const navigate = useNavigate()
+  const handedOver = (location.state as { ask?: string } | null)?.ask
+  const [draft, setDraft] = useState(handedOver ?? '')
   const scroller = useRef<HTMLDivElement>(null)
   const abort = useRef<AbortController | null>(null)
+
+  // A question handed over from another page (e.g. explore) starts a fresh conversation; clear it so a reload doesn't repeat it.
+  useEffect(() => {
+    if (!handedOver) return
+    setCurrent(null)
+    navigate('.', { replace: true, state: null })
+  }, [handedOver, setCurrent, navigate])
 
   const loadSessions = useCallback(() => api.listChats().then(setSessions, () => {}), [])
   useEffect(() => {

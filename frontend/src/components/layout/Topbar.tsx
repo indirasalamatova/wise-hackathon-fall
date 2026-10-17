@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router'
-import { Bell, Menu, Search } from 'lucide-react'
+import { NavLink, useNavigate } from 'react-router'
+import { Bell, Globe2, Menu, Search } from 'lucide-react'
 import { useI18n } from '@/i18n'
 import { useCase } from '@/store/context'
 import { destinations } from '@/lib/mock-data'
@@ -110,6 +110,17 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
         <GlobalSearch />
 
         <div ref={right} className="relative ml-auto flex items-center gap-2.5">
+          <NavLink
+            to="/app/explore"
+            aria-label={t('explore.title')}
+            title={t('explore.title')}
+            className={({ isActive }) =>
+              cn('grid size-[42px] place-items-center rounded-xl border bg-white transition-colors hover:border-forest-950', isActive ? 'border-forest-950 bg-rose-100' : 'border-rose-300')
+            }
+          >
+            <Globe2 className="size-5" aria-hidden />
+          </NavLink>
+
           <LanguageMenu open={panel === 'lang'} onOpenChange={(o) => setPanel(o ? 'lang' : 'none')} />
 
           <button

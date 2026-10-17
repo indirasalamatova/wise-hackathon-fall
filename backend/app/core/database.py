@@ -32,6 +32,10 @@ MIGRATIONS = [
     "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS source VARCHAR NOT NULL DEFAULT 'user'",
     "CREATE INDEX IF NOT EXISTS ix_tasks_plan_id ON tasks (plan_id)",
     "ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS provider VARCHAR NOT NULL DEFAULT 'anthropic'",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS nationality_code VARCHAR NOT NULL DEFAULT ''",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS residence_code VARCHAR NOT NULL DEFAULT ''",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS travel_purpose VARCHAR NOT NULL DEFAULT 'tourism'",
+    "ALTER TABLE country_guidelines ADD COLUMN IF NOT EXISTS entry_type VARCHAR",
 ]
 
 

@@ -22,11 +22,29 @@ export interface User {
   monthlyBudget: number
   savings: number
   journeyStage: StageKey
+  /** ISO alpha-2, '' when not set. Used by the explore map. */
+  nationalityCode: string
+  residenceCode: string
+  travelPurpose: TravelPurpose
   settings: Settings
 }
 
 export type ProfilePatch = Partial<
-  Pick<User, 'fullName' | 'citizenship' | 'passport' | 'address' | 'residenceStatus' | 'studies' | 'monthlyBudget' | 'savings' | 'journeyStage'>
+  Pick<
+    User,
+    | 'fullName'
+    | 'citizenship'
+    | 'passport'
+    | 'address'
+    | 'residenceStatus'
+    | 'studies'
+    | 'monthlyBudget'
+    | 'savings'
+    | 'journeyStage'
+    | 'nationalityCode'
+    | 'residenceCode'
+    | 'travelPurpose'
+  >
 >
 
 export const documentCategories = ['Passport', 'Visa or permit', 'Insurance', 'Finances', 'Education', 'Housing', 'Other'] as const
@@ -175,4 +193,67 @@ export interface Settings {
   push: boolean
   email: boolean
   sms: boolean
+}
+
+/* ---------------------------------------------------------------- explore */
+
+export const travelPurposes = ['tourism', 'study', 'work', 'job_search', 'family'] as const
+export type TravelPurpose = (typeof travelPurposes)[number]
+
+export const visaStatuses = ['visa_free', 'visa_on_arrival', 'evisa', 'visa_required', 'unknown'] as const
+/** `home` is the user's own country or the country of their residence permit. */
+export type VisaStatus = (typeof visaStatuses)[number] | 'home'
+/** What decided the status: see backend/app/explore.py. */
+export type VisaBasis = 'home' | 'rule' | 'verified' | 'indicative' | 'none'
+
+export interface VisaDecision {
+  code: string
+  status: VisaStatus
+  basis: VisaBasis
+  stayDays?: number
+  /** Note keys, translated as explore.note.<key>. */
+  notes: string[]
+  hasGuideline: boolean
+}
+
+export interface DataSource {
+  title: string
+  url: string
+  asOf: string
+  licence: string
+}
+
+export interface TravelProfile {
+  origin?: string
+  originSource: 'chosen' | 'profile' | 'passport' | 'citizenship' | 'none'
+  residence?: string
+  purpose: TravelPurpose
+}
+
+export interface VisaMap extends TravelProfile {
+  source: DataSource
+  passports: string[]
+  countries: VisaDecision[]
+}
+
+export interface CountryGuidelineDetail {
+  status: 'current' | 'stale' | 'missing'
+  reason: string
+  visaType: string
+  verifiedAt?: string
+  summary?: string
+  maxStayDays?: number
+  processingDays?: [number | null, number | null]
+  requirements: { title: string; description: string; mandatory: boolean }[]
+  fees: { title: string; amount: string | null; currency: string }[]
+  officialLinks: { title: string; url: string }[]
+  sources: { title: string; url: string }[]
+}
+
+export interface CountryVisaDetail extends TravelProfile {
+  decision: VisaDecision
+  guideline?: CountryGuidelineDetail
+  indicative?: { category: string; stayDays?: number; raw: string }
+  source: DataSource
+  favorite: boolean
 }
