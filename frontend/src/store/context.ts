@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react'
-import type { AppNotification, CaseDocument, DocumentCategory, Payment, PrefilledForm, ProfilePatch, Settings, Task, User, VisaPlan } from '@/lib/types'
+import type { AppNotification, CaseDocument, DocumentCategory, Payment, JourneySummary, PrefilledForm, ProfilePatch, Settings, Task, User } from '@/lib/types'
 
 export type LoadStatus = 'idle' | 'loading' | 'ready' | 'error'
 
@@ -38,10 +38,10 @@ export interface CaseContextValue {
   deleteDocument: (id: string) => Promise<void>
   reanalyzeDocument: (id: string) => Promise<void>
 
-  plans: VisaPlan[]
+  journeys: JourneySummary[]
   forms: PrefilledForm[]
   deleteForm: (id: string) => Promise<void>
-  /** Refetch what an agent turn changed (tasks, plans, forms, profile). */
+  /** Refetch what an agent turn or a journey action changed (journeys, tasks, forms, profile, ...). */
   refresh: (what: string[]) => void
 
   tasks: Task[]

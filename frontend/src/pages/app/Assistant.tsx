@@ -1,4 +1,4 @@
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import { Chat } from '@/components/chat/Chat'
 import { Badge, Card, CardTitle, DateTile } from '@/components/ui/primitives'
 import { expiryOf } from '@/components/case/expiry'
@@ -6,6 +6,7 @@ import { daysUntil, relativeDays, shortDate } from '@/lib/format'
 import { useCase } from '@/store/context'
 
 export function AssistantPage() {
+  const [params] = useSearchParams()
   const { tasks, documents } = useCase()
   const upcoming = tasks
     .filter((t) => !t.done && t.due && daysUntil(t.due) >= 0)
@@ -28,7 +29,7 @@ export function AssistantPage() {
   return (
     // Increased right column width (e.g., 320px / 340px) to make the panel wider
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px]">
-      <Chat />
+      <Chat journeyId={params.get('journey') ?? undefined} openChatId={params.get('chat') ?? undefined} initialPrompt={params.get('prompt') ?? undefined} fresh={params.has('new')} key={params.get('new') ? `new-${params.get('new')}` : 'chat'} />
 
       {/* Added w-full so the aside container spans the full width of its grid column */}
       <aside className="flex w-full flex-col gap-4">

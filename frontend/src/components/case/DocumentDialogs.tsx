@@ -4,7 +4,7 @@ import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/Button'
 import { Field, Input, Progress } from '@/components/ui/primitives'
 import { MAX_UPLOAD_MB } from '@/lib/api'
-import { cn, fileSize, money } from '@/lib/format'
+import { cn, fileSize } from '@/lib/format'
 import { documentCategories, type DocumentCategory } from '@/lib/types'
 import { useCase, useToast } from '@/store/context'
 
@@ -24,14 +24,25 @@ const titleFromFile = (name: string) => {
 
 /* --------------------------------------------------------------- Upload */
 
-export function UploadDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function UploadDialog({
+  open,
+  onClose,
+  defaultCategory = 'Passport',
+  defaultTitle = '',
+}: {
+  open: boolean
+  onClose: () => void
+  /** Preset when uploading for a specific requirement; remount (key) to change. */
+  defaultCategory?: DocumentCategory
+  defaultTitle?: string
+}) {
   const { uploadDocument } = useCase()
   const { toast } = useToast()
   const input = useRef<HTMLInputElement>(null)
   const [drag, setDrag] = useState(false)
   const [file, setFile] = useState<File | null>(null)
-  const [title, setTitle] = useState('')
-  const [category, setCategory] = useState<DocumentCategory>('Passport')
+  const [title, setTitle] = useState(defaultTitle)
+  const [category, setCategory] = useState<DocumentCategory>(defaultCategory)
   const [expiresOn, setExpiresOn] = useState('')
   const [progress, setProgress] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -39,8 +50,8 @@ export function UploadDialog({ open, onClose }: { open: boolean; onClose: () => 
   const busy = progress !== null
   const reset = () => {
     setFile(null)
-    setTitle('')
-    setCategory('Passport')
+    setTitle(defaultTitle)
+    setCategory(defaultCategory)
     setExpiresOn('')
     setProgress(null)
     setError(null)
@@ -164,17 +175,20 @@ export function UploadDialog({ open, onClose }: { open: boolean; onClose: () => 
 export function PayDialog({
   open,
   amount,
+  currency = 'EUR',
   what,
   onClose,
   onPay,
 }: {
   open: boolean
   amount: number
+  currency?: string
   what: string
   onClose: () => void
   /** Performs the payment on the server. */
   onPay: () => Promise<void>
 }) {
+  const price = new Intl.NumberFormat('en-IE', { style: 'currency', currency, maximumFractionDigits: 2 }).format(amount)
   const [loading, setLoading] = useState(false)
   const [paid, setPaid] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -202,7 +216,7 @@ export function PayDialog({
     <Dialog open={open} onClose={close} title={paid ? 'Payment recorded' : 'Pay with Wise'} description={what}>
       {paid ? (
         <>
-          <p className="text-[15px]">{money(amount)} is in your payments history.</p>
+          <p className="text-[15px]">{price} is in your payments history.</p>
           <div className="mt-6 flex justify-end">
             <Button onClick={close}>Done</Button>
           </div>
@@ -211,7 +225,7 @@ export function PayDialog({
         <>
           <div className="rounded-2xl bg-forest-950 px-5 py-5 text-white">
             <p className="text-[13px] text-rose-300">You pay</p>
-            <p className="font-display mt-1 text-[34px] leading-none font-semibold">{money(amount)}</p>
+            <p className="font-display mt-1 text-[34px] leading-none font-semibold">{price}</p>
           </div>
           <p className="mt-4 text-sm text-muted">Prototype: this records the payment in your history. No money moves yet.</p>
           <FormError error={error} />
@@ -220,7 +234,7 @@ export function PayDialog({
               Cancel
             </Button>
             <Button variant="accent" onClick={pay} loading={loading}>
-              Pay {money(amount)}
+              Pay {price}
             </Button>
           </div>
         </>

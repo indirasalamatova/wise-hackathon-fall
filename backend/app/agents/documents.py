@@ -50,6 +50,9 @@ class Extraction(BaseModel):
     nationality: Optional[str]
     document_number: Optional[str]
     issuing_country: Optional[str]
+    place_of_birth: Optional[str] = Field(description="As printed (passports, ID cards)")
+    issuer_name: Optional[str] = Field(description="Organisation that issued it: university, insurer, employer, hotel, landlord, bank")
+    address: Optional[str] = Field(description="Address printed on the document, e.g. the accommodation's or the holder's")
     date_of_birth: Optional[str] = Field(description="As printed")
     issue_date: Optional[str] = Field(description="As printed")
     expiry_date: Optional[str] = Field(description="As printed; for insurance, the end of cover")
@@ -81,10 +84,9 @@ async def _extract_gemini(data: bytes, content_type: str, title: str, category: 
     from google.genai import errors as gerrors, types
 
     try:
-        response = await llm.gemini().aio.models.generate_content(
-            model=llm.GEMINI_MODEL,
-            contents=[types.Part.from_bytes(data=data, mime_type=content_type), _prompt(title, category)],
-            config=types.GenerateContentConfig(
+        response, _ = await llm.gemini_generate(
+            [types.Part.from_bytes(data=data, mime_type=content_type), _prompt(title, category)],
+            types.GenerateContentConfig(
                 system_instruction=SYSTEM,
                 response_mime_type="application/json",
                 response_schema=Extraction,

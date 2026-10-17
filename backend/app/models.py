@@ -50,9 +50,14 @@ class Task(SQLModel, table=True):
     due_date: Optional[date] = None
     done: bool = False
     created_at: datetime = Field(default_factory=utcnow)
-    # Set when the planning agent created the task, so a re-plan can replace its own tasks only.
-    plan_id: Optional[str] = Field(default=None, index=True)
     source: str = "user"  # user, agent
+    # Journey pathway: tasks with a journey_id are its steps, in seq order.
+    journey_id: Optional[str] = Field(default=None, foreign_key="journeys.id", index=True)
+    kind: str = "personal"  # personal, requirement (a document to get), step (an application step)
+    seq: int = 0
+    description: Optional[str] = None
+    requirement_key: Optional[str] = None
+    done_at: Optional[datetime] = None
 
 
 class Document(SQLModel, table=True):
@@ -80,6 +85,11 @@ class Payment(SQLModel, table=True):
     amount_eur: int
     status: str = "paid"  # paid, upcoming
     paid_on: date = Field(default_factory=lambda: utcnow().date())
+    journey_id: Optional[str] = Field(default=None, foreign_key="journeys.id", index=True)
+    fee_key: Optional[str] = None
+    # Exact amount in its own currency (decimal string); amount_eur is kept for older rows.
+    amount: Optional[str] = None
+    currency: str = "EUR"
 
 
 class Notification(SQLModel, table=True):
@@ -127,6 +137,10 @@ class CountryGuideline(SQLModel, table=True):
     valid_until: Optional[date] = None
     version: int = 1
     updated_at: datetime = Field(default_factory=utcnow)
+    # Set by the pipeline: hash of the source pages it was extracted from, last check time.
+    managed_by: str = "manual"  # manual, pipeline
+    source_hash: Optional[str] = None
+    checked_at: Optional[datetime] = None
 
 
 class DocumentAnalysis(SQLModel, table=True):
@@ -136,6 +150,7 @@ class DocumentAnalysis(SQLModel, table=True):
     document_id: str = Field(foreign_key="documents.id", unique=True, index=True)
     user_id: str = Field(foreign_key="users.id", index=True)
     status: str = "pending"  # pending, done, failed, skipped
+    claimed_at: Optional[datetime] = None  # set by the worker that is analysing it
     document_kind: Optional[str] = None
     summary: Optional[str] = None
     raw: dict = json_col(dict)  # what the model read, as printed
@@ -146,24 +161,33 @@ class DocumentAnalysis(SQLModel, table=True):
     analyzed_at: Optional[datetime] = None
 
 
-class VisaPlan(SQLModel, table=True):
-    __tablename__ = "visa_plans"
+class Journey(SQLModel, table=True):
+    """
+    A trip or move the user plans with the assistant and then walks through.
+    Its pathway is the tasks with this journey_id (ordered by seq); everything
+    else (documents needed, finances, automation) is computed live from the
+    guideline and the user's data, so it never goes out of date.
+    """
+    __tablename__ = "journeys"
 
     id: str = Field(default_factory=new_id, primary_key=True)
     user_id: str = Field(foreign_key="users.id", index=True)
-    guideline_id: str = Field(foreign_key="country_guidelines.id")
-    guideline_version: int
+    parent_id: Optional[str] = Field(default=None, foreign_key="journeys.id")  # the leg this one continues
+    title: str
     origin_code: str
     destination_code: str
     destination_name: str
     purpose: str
     visa_type: str
+    guideline_id: Optional[str] = Field(default=None, foreign_key="country_guidelines.id")
+    guideline_version: Optional[int] = None
     travel_date: Optional[date] = None
     stay_days: Optional[int] = None
-    gap: dict = json_col(dict)
-    fees: dict = json_col(dict)
-    status: str = "active"  # active, archived
+    status: str = "planning"  # planning, active, completed, archived
+    summary: Optional[str] = None
     created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+    completed_at: Optional[datetime] = None
 
 
 class PrefilledForm(SQLModel, table=True):
@@ -171,7 +195,7 @@ class PrefilledForm(SQLModel, table=True):
 
     id: str = Field(default_factory=new_id, primary_key=True)
     user_id: str = Field(foreign_key="users.id", index=True)
-    plan_id: Optional[str] = Field(default=None, foreign_key="visa_plans.id")
+    journey_id: Optional[str] = Field(default=None, foreign_key="journeys.id", index=True)
     form_key: str
     title: str
     official_url: Optional[str] = None
@@ -185,6 +209,7 @@ class ChatSession(SQLModel, table=True):
     id: str = Field(default_factory=new_id, primary_key=True)
     user_id: str = Field(foreign_key="users.id", index=True)
     title: str = "New conversation"
+    journey_id: Optional[str] = Field(default=None, foreign_key="journeys.id", index=True)
     provider: str = "anthropic"  # gemini, anthropic: whose message format the history uses
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
@@ -206,3 +231,33 @@ class ChatMessage(SQLModel, table=True):
     display_text: Optional[str] = None
     events: list = json_col()  # tool steps shown in the UI
     created_at: datetime = Field(default_factory=utcnow)
+
+
+class SourceSnapshot(SQLModel, table=True):
+    """An official page as fetched by the pipeline; quotes are verified against this text."""
+    __tablename__ = "source_snapshots"
+
+    id: str = Field(default_factory=new_id, primary_key=True)
+    run_id: str = Field(foreign_key="pipeline_runs.id", index=True)
+    url: str = Field(index=True)
+    final_url: str
+    found_by: str = "seed"  # seed, search
+    status_code: int
+    content_hash: Optional[str] = None
+    text: str = ""
+    error: Optional[str] = None
+    fetched_at: datetime = Field(default_factory=utcnow)
+
+
+class PipelineRun(SQLModel, table=True):
+    __tablename__ = "pipeline_runs"
+
+    id: str = Field(default_factory=new_id, primary_key=True)
+    trigger: str = "schedule"  # schedule, manual
+    status: str = "queued"  # queued, running, done, failed
+    requested_by: Optional[str] = None
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=utcnow)
+    results: list = json_col()  # one entry per target
+    log: list = json_col()

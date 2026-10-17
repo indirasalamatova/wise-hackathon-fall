@@ -3,7 +3,7 @@ import { CheckCircle2, AlertCircle } from 'lucide-react'
 import * as api from '@/lib/api'
 import { cn, uid } from '@/lib/format'
 import { setAuthToken, setUnauthorizedHandler } from '@/lib/http'
-import type { AppNotification, CaseDocument, Payment, PrefilledForm, ProfilePatch, Settings, Task, User, VisaPlan } from '@/lib/types'
+import type { AppNotification, CaseDocument, Payment, JourneySummary, PrefilledForm, ProfilePatch, Settings, Task, User } from '@/lib/types'
 import { AuthContext, CaseContext, ToastContext, useAuth, useToast, type CaseContextValue, type LoadStatus } from './context'
 import { clearPersisted, usePersistentState } from './persist'
 
@@ -123,7 +123,7 @@ interface CaseData {
   tasks: Task[]
   payments: Payment[]
   notifications: AppNotification[]
-  plans: VisaPlan[]
+  journeys: JourneySummary[]
   forms: PrefilledForm[]
 }
 
@@ -132,20 +132,20 @@ const loaders = {
   tasks: api.listTasks,
   payments: api.listPayments,
   notifications: api.listNotifications,
-  plans: api.listPlans,
+  journeys: api.listJourneys,
   forms: api.listForms,
 } satisfies { [K in keyof CaseData]: () => Promise<CaseData[K]> }
 
 const loadCase = async (): Promise<CaseData> => {
-  const [documents, tasks, payments, notifications, plans, forms] = await Promise.all([
+  const [documents, tasks, payments, notifications, journeys, forms] = await Promise.all([
     loaders.documents(),
     loaders.tasks(),
     loaders.payments(),
     loaders.notifications(),
-    loaders.plans(),
+    loaders.journeys(),
     loaders.forms(),
   ])
-  return { documents, tasks, payments, notifications, plans, forms }
+  return { documents, tasks, payments, notifications, journeys, forms }
 }
 
 const ANALYSIS_POLL_MS = 3000
@@ -233,7 +233,7 @@ export function CaseProvider({ children }: { children: ReactNode }) {
         patch('documents', (ds) => ds.map((x) => (x.id === id ? doc : x)))
       },
 
-      plans: d?.plans ?? [],
+      journeys: d?.journeys ?? [],
       forms: d?.forms ?? [],
       deleteForm: async (id) => {
         await api.deleteForm(id)

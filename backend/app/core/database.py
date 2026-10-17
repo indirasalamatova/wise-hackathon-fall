@@ -26,12 +26,31 @@ async_session_maker = sessionmaker(
 )
 
 # create_all only creates missing tables; columns added to existing tables go here.
-# Each statement must be idempotent.
+# Each statement must be idempotent: they all run on every start.
 MIGRATIONS = [
     "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS plan_id VARCHAR",
     "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS source VARCHAR NOT NULL DEFAULT 'user'",
     "CREATE INDEX IF NOT EXISTS ix_tasks_plan_id ON tasks (plan_id)",
     "ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS provider VARCHAR NOT NULL DEFAULT 'anthropic'",
+    # journeys
+    "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS journey_id VARCHAR REFERENCES journeys(id)",
+    "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS kind VARCHAR NOT NULL DEFAULT 'personal'",
+    "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS seq INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS description VARCHAR",
+    "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS requirement_key VARCHAR",
+    "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS done_at TIMESTAMP WITH TIME ZONE",
+    "CREATE INDEX IF NOT EXISTS ix_tasks_journey_id ON tasks (journey_id)",
+    "ALTER TABLE payments ADD COLUMN IF NOT EXISTS journey_id VARCHAR REFERENCES journeys(id)",
+    "ALTER TABLE payments ADD COLUMN IF NOT EXISTS fee_key VARCHAR",
+    "ALTER TABLE payments ADD COLUMN IF NOT EXISTS amount VARCHAR",
+    "ALTER TABLE payments ADD COLUMN IF NOT EXISTS currency VARCHAR NOT NULL DEFAULT 'EUR'",
+    "ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS journey_id VARCHAR REFERENCES journeys(id)",
+    "ALTER TABLE prefilled_forms ADD COLUMN IF NOT EXISTS journey_id VARCHAR REFERENCES journeys(id)",
+    # worker queue + pipeline
+    "ALTER TABLE document_analyses ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMP WITH TIME ZONE",
+    "ALTER TABLE country_guidelines ADD COLUMN IF NOT EXISTS managed_by VARCHAR NOT NULL DEFAULT 'manual'",
+    "ALTER TABLE country_guidelines ADD COLUMN IF NOT EXISTS source_hash VARCHAR",
+    "ALTER TABLE country_guidelines ADD COLUMN IF NOT EXISTS checked_at TIMESTAMP WITH TIME ZONE",
 ]
 
 

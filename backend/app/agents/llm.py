@@ -7,6 +7,7 @@ guideline gate, SSE events) is provider-independent.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Literal, Optional
 
@@ -22,6 +23,9 @@ FALLBACK = {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"
 
 # Gemini. Flash fits the free tier's rate limits; an agent turn makes several calls.
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+# One-shot calls (document reading, pipeline extraction) move to the next model when one is
+# out of quota. Chat doesn't: a conversation's thinking signatures belong to one model.
+GEMINI_FALLBACK_MODELS = [m.strip() for m in os.getenv("GEMINI_FALLBACK_MODELS", "gemini-3-flash-preview,gemini-flash-latest").split(",") if m.strip()]
 
 _anthropic: Optional[AsyncAnthropic] = None
 _gemini = None
@@ -62,6 +66,40 @@ def gemini():
 
         _gemini = genai.Client(api_key=key)
     return _gemini
+
+
+def _quota_exhausted(e: Exception) -> bool:
+    from google.genai import errors as gerrors
+
+    return isinstance(e, gerrors.APIError) and (e.code == 429 or (e.status or "").upper() == "RESOURCE_EXHAUSTED")
+
+
+OVERLOAD_RETRY_S = 8
+
+
+def _overloaded(e: Exception) -> bool:
+    from google.genai import errors as gerrors
+
+    return isinstance(e, gerrors.APIError) and (e.code in (500, 503) or (e.status or "").upper() in ("UNAVAILABLE", "INTERNAL"))
+
+
+async def gemini_generate(contents, config, model: Optional[str] = None):
+    """generate_content with quota fallback across GEMINI_FALLBACK_MODELS. Returns (response, model used)."""
+    models = [model or GEMINI_MODEL] + [m for m in GEMINI_FALLBACK_MODELS if m != (model or GEMINI_MODEL)]
+    last: Optional[Exception] = None
+    for m in models:
+        for attempt in range(2):
+            try:
+                return await gemini().aio.models.generate_content(model=m, contents=contents, config=config), m
+            except Exception as e:
+                last = e
+                if _overloaded(e) and attempt == 0:
+                    await asyncio.sleep(OVERLOAD_RETRY_S)  # usually a short demand spike: retry once
+                    continue
+                if _quota_exhausted(e) or _overloaded(e):
+                    break  # next model
+                raise
+    raise last  # every model is out of quota or overloaded
 
 
 def describe_error(e: Exception) -> str:

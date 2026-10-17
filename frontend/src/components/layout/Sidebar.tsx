@@ -1,5 +1,5 @@
 import { NavLink, Link } from 'react-router'
-import { FileText, ListChecks, MessageSquareText, Route, Wallet, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { Database, FileText, ListChecks, MessageSquareText, Route, Wallet, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { Logo, LogoMark } from '@/components/brand/Logo'
 import { Avatar } from '@/components/ui/primitives'
 import { useAuth, useCase } from '@/store/context'
@@ -8,11 +8,12 @@ import { cn } from '@/lib/format'
 
 const navItems = [
   { to: '/app', label: 'Assistant', icon: MessageSquareText, end: true },
-  { to: '/app/journey', label: 'My journey', icon: Route },
+  { to: '/app/journeys', label: 'Journeys', icon: Route },
   { to: '/app/documents', label: 'Documents', icon: FileText },
   { to: '/app/finances', label: 'Finances', icon: Wallet },
   { to: '/app/todo', label: 'To-do list', icon: ListChecks },
 ] as const
+const adminItem = { to: '/app/admin/data', label: 'Data sources', icon: Database } as const
 
 export function Sidebar({
   collapsed,
@@ -67,7 +68,7 @@ export function Sidebar({
       )}
 
       <ul className="flex flex-col gap-1.5">
-        {navItems.map(({ to, label, icon: Icon, ...rest }) => {
+        {(user?.isAdmin ? [...navItems, adminItem] : navItems).map(({ to, label, icon: Icon, ...rest }) => {
           const count = counts[to]
           return (
             <li key={to}>

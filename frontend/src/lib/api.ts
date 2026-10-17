@@ -16,13 +16,15 @@ import type {
   DocumentCategory,
   FormField,
   PrefilledForm,
-  RequirementCheck,
-  VisaPlan,
+  GuidelineEntry,
+  JourneyDetail,
+  JourneyStatus,
+  JourneySummary,
+  PipelineRunInfo,
   NotificationKind,
   Payment,
   ProfilePatch,
   Settings,
-  StageKey,
   Task,
   TaskCategory,
   User,
@@ -46,7 +48,7 @@ interface ApiUser {
   studies: string
   monthly_budget_eur: number
   savings_eur: number
-  journey_stage: string
+  is_admin: boolean
   notify_push: boolean
   notify_email: boolean
   notify_sms: boolean
@@ -58,6 +60,7 @@ interface ApiTask {
   category: string
   due_date: string | null
   done: boolean
+  journey_id: string | null
 }
 
 interface ApiDocument {
@@ -80,23 +83,12 @@ interface ApiDocument {
   } | null
 }
 
-interface ApiPlan {
-  id: string
-  destination_code: string
-  destination_name: string
-  purpose: string
-  visa_type: string
-  travel_date: string | null
-  stay_days: number | null
-  gap: { requirements: RequirementCheck[] }
-  fees: { mandatory_totals: Record<string, string>; amounts_not_fixed: string[] }
-  created_at: string
-  guideline_status: 'current' | 'stale' | 'missing'
-}
 
 interface ApiForm {
   id: string
-  plan_id: string | null
+  form_key: string
+  has_official_pdf: boolean
+  journey_id: string | null
   title: string
   official_url: string | null
   fields: FormField[]
@@ -148,7 +140,6 @@ const profileKeys: Record<keyof ProfilePatch, keyof ApiUser> = {
   studies: 'studies',
   monthlyBudget: 'monthly_budget_eur',
   savings: 'savings_eur',
-  journeyStage: 'journey_stage',
 }
 
 const initialsOf = (name: string) =>
@@ -175,7 +166,7 @@ const toUser = (u: ApiUser): User => ({
   studies: u.studies,
   monthlyBudget: u.monthly_budget_eur,
   savings: u.savings_eur,
-  journeyStage: u.journey_stage as StageKey,
+  isAdmin: u.is_admin,
   settings: { push: u.notify_push, email: u.notify_email, sms: u.notify_sms },
 })
 
@@ -185,6 +176,7 @@ const toTask = (t: ApiTask): Task => ({
   category: t.category as TaskCategory,
   due: t.due_date ?? undefined,
   done: t.done,
+  journeyId: t.journey_id ?? undefined,
 })
 
 const toDocument = (d: ApiDocument): CaseDocument => ({
@@ -209,24 +201,12 @@ const toDocument = (d: ApiDocument): CaseDocument => ({
     : undefined,
 })
 
-const toPlan = (p: ApiPlan): VisaPlan => ({
-  id: p.id,
-  destinationCode: p.destination_code,
-  destinationName: p.destination_name,
-  purpose: p.purpose,
-  visaType: p.visa_type,
-  travelDate: p.travel_date ?? undefined,
-  stayDays: p.stay_days ?? undefined,
-  requirements: p.gap.requirements ?? [],
-  feeTotals: p.fees.mandatory_totals ?? {},
-  feesNotFixed: p.fees.amounts_not_fixed ?? [],
-  createdAt: p.created_at,
-  guidelineCurrent: p.guideline_status === 'current',
-})
 
 const toForm = (f: ApiForm): PrefilledForm => ({
   id: f.id,
-  planId: f.plan_id ?? undefined,
+  formKey: f.form_key,
+  hasOfficialPdf: f.has_official_pdf,
+  journeyId: f.journey_id ?? undefined,
   title: f.title,
   officialUrl: f.official_url ?? undefined,
   fields: f.fields,
@@ -328,11 +308,10 @@ export const markNotificationRead = (id: string) => request<ApiNotification>(`/a
 
 export const markAllNotificationsRead = () => request<null>('/api/notifications/mark-all-read', { method: 'POST' })
 
-/* ------------------------------------------------------- analysis, plans */
+/* ------------------------------------------------------- analysis, forms */
 
 export const reanalyzeDocument = async (id: string) => toDocument(await request<ApiDocument>(`/api/documents/${id}/analyze`, { method: 'POST' }))
 
-export const listPlans = async () => (await request<ApiPlan[]>('/api/plans')).map(toPlan)
 
 export const listForms = async () => (await request<ApiForm[]>('/api/forms')).map(toForm)
 
@@ -340,13 +319,30 @@ export const getForm = async (id: string) => toForm(await request<ApiForm>(`/api
 
 export const deleteForm = (id: string) => request<null>(`/api/forms/${id}`, { method: 'DELETE' })
 
+export const updateForm = async (id: string, values: Record<string, string | null>) =>
+  toForm(await request<ApiForm>(`/api/forms/${id}`, { method: 'PATCH', body: { values } }))
+
+/** The official form with the values written in (only when hasOfficialPdf). */
+export const downloadOfficialForm = (id: string) => getBlob(`/api/forms/${id}/official.pdf`)
+
+/** Every field with its value and source, for online forms. */
+export const downloadFormDatasheet = (id: string) => getBlob(`/api/forms/${id}/datasheet.pdf`)
+
 /* ------------------------------------------------------------- assistant */
 
-const toSession = (s: { id: string; title: string; updated_at: string }): ChatSessionInfo => ({ id: s.id, title: s.title, updatedAt: s.updated_at })
+interface ApiSession {
+  id: string
+  title: string
+  journey_id: string | null
+  updated_at: string
+}
 
-export const listChats = async () => (await request<{ id: string; title: string; updated_at: string }[]>('/api/chat/sessions')).map(toSession)
+const toSession = (s: ApiSession): ChatSessionInfo => ({ id: s.id, title: s.title, journeyId: s.journey_id ?? undefined, updatedAt: s.updated_at })
 
-export const createChat = async () => toSession(await request<{ id: string; title: string; updated_at: string }>('/api/chat/sessions', { method: 'POST' }))
+export const listChats = async () => (await request<ApiSession[]>('/api/chat/sessions')).map(toSession)
+
+export const createChat = async (journeyId?: string) =>
+  toSession(await request<ApiSession>('/api/chat/sessions', { method: 'POST', body: { journey_id: journeyId ?? null } }))
 
 export const deleteChat = (id: string) => request<null>(`/api/chat/sessions/${id}`, { method: 'DELETE' })
 
@@ -368,3 +364,102 @@ export async function getChatMessages(id: string): Promise<ChatMessage[]> {
 
 export const sendChatMessage = (id: string, message: string, onEvent: (e: ChatEvent) => void, signal?: AbortSignal) =>
   streamEvents<ChatEvent>(`/api/chat/sessions/${id}/messages`, { message }, onEvent, signal)
+
+/* -------------------------------------------------------------- journeys */
+
+interface ApiJourneySummary {
+  id: string
+  title: string
+  status: JourneyStatus
+  destination_code: string
+  destination_name: string
+  purpose: string
+  visa_type: string
+  travel_date: string | null
+  stay_days: number | null
+  parent_id?: string | null
+  progress: { done: number; total: number }
+  next_step?: { title: string; due_date: string | null } | null
+  updated_at: string
+}
+
+type ApiJourneyDetail = ApiJourneySummary & {
+  summary: string | null
+  origin_code: string
+  trip_end: string | null
+  created_at: string
+  completed_at: string | null
+  guideline: { status: JourneyDetail['guideline']['status']; reason: string; verified_at: string | null; summary: string | null; processing_days_max: number | null; max_stay_days: number | null; sources: { title: string; url: string }[] }
+  steps: { id: string; title: string; description: string | null; kind: JourneyDetail['steps'][number]['kind']; category: string; due_date: string | null; done: boolean }[]
+  requirements: JourneyDetail['requirements']
+  finances: JourneyDetail['finances']
+  automation: (Omit<JourneyDetail['automation'][number], 'formId'> & { form_id?: string | null })[]
+  forms: { id: string; title: string; created_at: string; missing: number }[]
+  chats: { id: string; title: string; updated_at: string }[]
+  parent: { id: string; title: string } | null
+  continuations: JourneyDetail['continuations']
+}
+
+const toJourneySummary = (j: ApiJourneySummary): JourneySummary => ({
+  id: j.id,
+  title: j.title,
+  status: j.status,
+  destinationCode: j.destination_code,
+  destinationName: j.destination_name,
+  purpose: j.purpose,
+  visaType: j.visa_type,
+  travelDate: j.travel_date ?? undefined,
+  stayDays: j.stay_days ?? undefined,
+  parentId: j.parent_id ?? undefined,
+  progress: j.progress,
+  nextStep: j.next_step ? { title: j.next_step.title, dueDate: j.next_step.due_date ?? undefined } : undefined,
+  updatedAt: j.updated_at,
+})
+
+const toJourney = (j: ApiJourneyDetail): JourneyDetail => ({
+  ...toJourneySummary(j),
+  parentId: j.parent?.id,
+  summary: j.summary ?? undefined,
+  originCode: j.origin_code,
+  tripEnd: j.trip_end ?? undefined,
+  createdAt: j.created_at,
+  completedAt: j.completed_at ?? undefined,
+  guideline: {
+    status: j.guideline.status,
+    reason: j.guideline.reason,
+    verifiedAt: j.guideline.verified_at ?? undefined,
+    summary: j.guideline.summary ?? undefined,
+    processingDaysMax: j.guideline.processing_days_max ?? undefined,
+    maxStayDays: j.guideline.max_stay_days ?? undefined,
+    sources: j.guideline.sources ?? [],
+  },
+  steps: j.steps.map((s) => ({ id: s.id, title: s.title, description: s.description ?? undefined, kind: s.kind, category: s.category, dueDate: s.due_date ?? undefined, done: s.done })),
+  requirements: j.requirements,
+  finances: j.finances,
+  automation: j.automation.map(({ form_id, ...a }) => ({ ...a, formId: form_id ?? undefined })),
+  forms: j.forms.map((f) => ({ id: f.id, title: f.title, createdAt: f.created_at, missing: f.missing })),
+  chats: j.chats.map((c) => ({ id: c.id, title: c.title, updatedAt: c.updated_at })),
+  parent: j.parent ?? undefined,
+  continuations: j.continuations,
+})
+
+export const listJourneys = async () => (await request<ApiJourneySummary[]>('/api/journeys')).map(toJourneySummary)
+
+export const getJourney = async (id: string) => toJourney(await request<ApiJourneyDetail>(`/api/journeys/${id}`))
+
+export const updateJourney = async (id: string, patch: { title?: string; status?: JourneyStatus; travel_date?: string | null; stay_days?: number | null }) =>
+  toJourney(await request<ApiJourneyDetail>(`/api/journeys/${id}`, { method: 'PATCH', body: patch }))
+
+export const deleteJourney = (id: string) => request<null>(`/api/journeys/${id}`, { method: 'DELETE' })
+
+export const prefillJourneyForm = async (id: string, formKey: string) => toForm(await request<ApiForm>(`/api/journeys/${id}/forms/${formKey}`, { method: 'POST' }))
+
+export const payJourneyFee = (id: string, feeKey: string) => request<unknown>(`/api/journeys/${id}/fees/${feeKey}/pay`, { method: 'POST' })
+
+export const journeyCalendar = (id: string) => getBlob(`/api/journeys/${id}/calendar.ics`)
+
+/* ----------------------------------------------------------------- admin */
+
+export const getPipeline = () => request<{ runs: PipelineRunInfo[]; guidelines: GuidelineEntry[]; targets: string[] }>('/api/admin/pipeline')
+
+export const queuePipelineRun = () => request<PipelineRunInfo>('/api/admin/pipeline/runs', { method: 'POST' })

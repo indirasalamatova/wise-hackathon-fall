@@ -28,6 +28,7 @@ class UserOut(BaseModel):
     notify_push: bool
     notify_email: bool
     notify_sms: bool
+    is_admin: bool = False
 
 
 class AuthResponse(BaseModel):
@@ -83,3 +84,19 @@ class PaymentCreate(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
+
+
+class ChatCreate(BaseModel):
+    journey_id: Optional[str] = None
+
+
+class JourneyPatch(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    status: Optional[Literal["planning", "active", "completed", "archived"]] = None
+    travel_date: Optional[date] = None
+    stay_days: Optional[int] = Field(default=None, ge=1, le=3650)
+
+
+class FormValues(BaseModel):
+    """Values the user typed or corrected; null clears a field."""
+    values: dict[str, Optional[str]]

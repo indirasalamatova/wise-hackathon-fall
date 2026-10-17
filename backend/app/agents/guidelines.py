@@ -19,6 +19,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.models import CountryGuideline, utcnow
 
 GUIDELINE_MAX_AGE_DAYS = int(os.getenv("GUIDELINE_MAX_AGE_DAYS", "90"))
+# The pipeline re-verifies daily; if it hasn't for this long, its entries stop being used.
+PIPELINE_MAX_AGE_DAYS = int(os.getenv("PIPELINE_MAX_AGE_DAYS", "3"))
 PURPOSES = ("tourism", "study", "work", "job_search", "family")
 
 Freshness = Literal["current", "stale", "missing"]
@@ -36,15 +38,19 @@ def freshness(g: CountryGuideline, today: Optional[date] = None) -> tuple[Freshn
     if g.verified_at is None:
         return "stale", "not verified yet"
     age = (utcnow() - g.verified_at).days
-    if age > GUIDELINE_MAX_AGE_DAYS:
-        return "stale", f"last verified {age} days ago (limit {GUIDELINE_MAX_AGE_DAYS})"
+    limit = PIPELINE_MAX_AGE_DAYS if g.managed_by == "pipeline" else GUIDELINE_MAX_AGE_DAYS
+    if age > limit:
+        return "stale", f"last verified {age} days ago (limit {limit})"
     if g.valid_until and g.valid_until < today:
         return "stale", f"valid only until {g.valid_until.isoformat()}"
     return "current", f"verified {g.verified_at.date().isoformat()}"
 
 
 async def find(session: AsyncSession, destination: str, origin: str, purpose: str) -> Lookup:
-    """Exact citizenship match first, then the "*" (any citizenship) entry."""
+    """
+    The best usable entry: a current one for this citizenship, else a current "*" (any
+    citizenship) one. If none is current, report the closest one's reason.
+    """
     destination, origin = destination.upper(), origin.upper()
     rows = (
         await session.exec(
@@ -57,7 +63,12 @@ async def find(session: AsyncSession, destination: str, origin: str, purpose: st
     ).all()
     if not rows:
         return Lookup("missing", None, f"no guideline for {destination}, purpose {purpose}, citizenship {origin}")
-    g = sorted(rows, key=lambda r: r.origin_code == "*")[0]
+    ranked = sorted(rows, key=lambda r: r.origin_code == "*")  # exact citizenship first
+    for g in ranked:
+        status, reason = freshness(g)
+        if status == "current":
+            return Lookup(status, g, reason)
+    g = ranked[0]
     status, reason = freshness(g)
     return Lookup(status, g, reason)
 
@@ -73,3 +84,25 @@ async def coverage(session: AsyncSession) -> list[dict]:
             "purpose": g.purpose, "visa_type": g.visa_type, "status": status, "reason": reason,
         })
     return sorted(out, key=lambda r: (r["destination"], r["purpose"], r["origin"]))
+
+
+async def upsert(session: AsyncSession, g, *, managed_by: str = "manual", source_hash: Optional[str] = None) -> tuple[CountryGuideline, str]:
+    """Create or update the entry for (destination, origin, purpose); bumps version on update."""
+    existing = (await session.exec(select(CountryGuideline).where(
+        CountryGuideline.destination_code == g.destination_code,
+        CountryGuideline.origin_code == g.origin_code,
+        CountryGuideline.purpose == g.purpose,
+    ))).first()
+    data = g.model_dump(mode="json")
+    data["verified_at"], data["valid_until"] = g.verified_at, g.valid_until
+    data.update(managed_by=managed_by, source_hash=source_hash, checked_at=utcnow())
+    if existing:
+        for k, v in data.items():
+            setattr(existing, k, v)
+        existing.version += 1
+        existing.updated_at = utcnow()
+        session.add(existing)
+        return existing, f"updated to v{existing.version}"
+    row = CountryGuideline(**data)
+    session.add(row)
+    return row, "created"

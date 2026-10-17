@@ -1,23 +1,32 @@
 """
 Tools the chat agent can call. Each tool validates its input, works only on the
 calling user's data, and does all date / money / requirement logic in code
-(app/agents/rules.py). Guideline content is returned only when the guideline is
-current; otherwise the tool returns the "being updated" status and nothing else,
-so the model can't repeat outdated rules.
+(app/agents/rules.py, app/agents/journeys.py). Guideline content is returned only
+when the guideline is current; otherwise the tool returns the "being updated" status
+and nothing else, so the model can't repeat outdated rules.
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+from dataclasses import dataclass
+from datetime import date
 from typing import Any, Awaitable, Callable, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.agents import guidelines, rules
-from app.models import CountryGuideline, Document, DocumentAnalysis, PrefilledForm, Task, User, VisaPlan
+from app.agents import guidelines, journeys, rules
+from app.forms.templates import pdf_spec
+from app.models import CountryGuideline, Document, DocumentAnalysis, Journey, Task, User, utcnow
 
 Purpose = Literal["tourism", "study", "work", "job_search", "family"]
+
+
+@dataclass
+class Context:
+    """Who is calling and from which conversation."""
+    chat_id: Optional[str] = None
+    journey_id: Optional[str] = None  # the journey the conversation is about, if any
 
 
 def updating_message(destination: str, reason: str) -> dict[str, Any]:
@@ -29,10 +38,36 @@ def updating_message(destination: str, reason: str) -> dict[str, Any]:
     }
 
 
+def _jsonable(v: Any) -> Any:
+    if isinstance(v, dict):
+        return {k: _jsonable(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_jsonable(x) for x in v]
+    return v.isoformat() if hasattr(v, "isoformat") else v
+
+
 # ------------------------------------------------------------------ inputs
 
 class In(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+def _iso2(v: str) -> str:
+    v = v.strip().upper()
+    if len(v) != 2 or not v.isalpha():
+        raise ValueError("use a 2-letter ISO country code")
+    return v
+
+
+def _future_date(v: Optional[str]) -> Optional[str]:
+    if v is None:
+        return v
+    r = rules.normalize_date(v)
+    if not r.iso:
+        raise ValueError(f"travel_date must be YYYY-MM-DD ({r.issue})")
+    if r.iso < date.today().isoformat():
+        raise ValueError("travel_date is in the past")
+    return r.iso
 
 
 class Trip(In):
@@ -40,39 +75,48 @@ class Trip(In):
     origin_code: str = Field(description="ISO alpha-2 code of the user's citizenship (passport country), e.g. RU")
     purpose: Purpose
 
-    @field_validator("destination_code", "origin_code")
-    @classmethod
-    def iso2(cls, v: str) -> str:
-        v = v.strip().upper()
-        if len(v) != 2 or not v.isalpha():
-            raise ValueError("use a 2-letter ISO country code")
-        return v
+    _iso = field_validator("destination_code", "origin_code")(classmethod(lambda cls, v: _iso2(v)))
 
 
 class TripWithDates(Trip):
     travel_date: Optional[str] = Field(default=None, description="Planned entry date, YYYY-MM-DD, or null if unknown")
     stay_days: Optional[int] = Field(default=None, ge=1, le=3650, description="Length of stay in days, or null if unknown")
 
-    @field_validator("travel_date")
-    @classmethod
-    def iso_date(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return v
-        r = rules.normalize_date(v)
-        if not r.iso:
-            raise ValueError(f"travel_date must be YYYY-MM-DD ({r.issue})")
-        if r.iso < date.today().isoformat():
-            raise ValueError("travel_date is in the past")
-        return r.iso
+    _date = field_validator("travel_date")(classmethod(lambda cls, v: _future_date(v)))
+
+
+class NewJourney(TripWithDates):
+    title: Optional[str] = Field(default=None, description="Short name, e.g. 'Master's in Budapest'; null for a default")
+    continues_journey_id: Optional[str] = Field(default=None, description="id of a journey this one continues (next leg), or null")
+
+
+class JourneyRef(In):
+    journey_id: str
+
+
+class JourneyUpdate(In):
+    journey_id: str
+    status: Optional[Literal["planning", "active", "completed", "archived"]] = None
+    travel_date: Optional[str] = Field(default=None, description="New entry date, YYYY-MM-DD")
+    stay_days: Optional[int] = Field(default=None, ge=1, le=3650)
+    summary: Optional[str] = Field(default=None, description="One or two sentences on where the user stands, for later")
+
+    _date = field_validator("travel_date")(classmethod(lambda cls, v: _future_date(v)))
+
+
+class StepUpdate(In):
+    journey_id: str
+    step_id: str = Field(description="id of a step from get_journey")
+    done: bool
+
+
+class PrefillInput(In):
+    journey_id: str
+    form_key: str = Field(description="key of a form listed in get_journey's automation")
 
 
 class NoInput(In):
     pass
-
-
-class PrefillInput(In):
-    plan_id: str = Field(description="id of a plan from create_visa_plan or get_my_case")
-    form_key: str = Field(description="key of a form listed in the plan's guideline")
 
 
 class ProfileInput(In):
@@ -84,43 +128,6 @@ class ProfileInput(In):
 
 # --------------------------------------------------------------- helpers
 
-async def _user_docs(session: AsyncSession, user: User) -> list[tuple[Document, Optional[DocumentAnalysis]]]:
-    docs = (await session.exec(select(Document).where(Document.user_id == user.id))).all()
-    analyses = {a.document_id: a for a in (await session.exec(select(DocumentAnalysis).where(DocumentAnalysis.user_id == user.id))).all()}
-    return [(d, analyses.get(d.id)) for d in docs]
-
-
-def _as_rule_docs(pairs) -> list[rules.UserDoc]:
-    out = []
-    for d, a in pairs:
-        n = a.normalized if a and a.status == "done" else {}
-        out.append(rules.UserDoc(
-            id=d.id, title=d.title, category=d.category,
-            kind=(a.document_kind if a and a.status == "done" else None),
-            expiry_date=n.get("expiry_date") or (d.expires_on.isoformat() if d.expires_on else None),
-            issue_date=n.get("issue_date"),
-            issues=(a.issues if a else []),
-            amount=n.get("amount"),
-            currency=n.get("currency"),
-        ))
-    return out
-
-
-def _guideline_view(g: CountryGuideline) -> dict[str, Any]:
-    return {
-        "status": "current",
-        "verified": g.verified_at.date().isoformat() if g.verified_at else None,
-        "destination": g.destination_name, "visa_type": g.visa_type, "summary": g.summary,
-        "max_stay_days": g.max_stay_days,
-        "processing_days": [g.processing_days_min, g.processing_days_max],
-        "requirements": [{k: r.get(k) for k in ("key", "title", "description", "mandatory", "constraints")} for r in g.requirements],
-        "fees": rules.sum_fees(g.fees),
-        "steps": g.steps,
-        "forms": [{"form_key": f["key"], "title": f["title"], "official_url": f.get("official_url")} for f in g.forms],
-        "sources": g.sources,
-    }
-
-
 async def _current(session: AsyncSession, t: Trip) -> tuple[Optional[CountryGuideline], Optional[dict]]:
     look = await guidelines.find(session, t.destination_code, t.origin_code, t.purpose)
     if look.status != "current":
@@ -129,172 +136,162 @@ async def _current(session: AsyncSession, t: Trip) -> tuple[Optional[CountryGuid
     return look.guideline, None
 
 
-# ----------------------------------------------------------------- tools
-
-async def live_plan(session: AsyncSession, user: User, plan: VisaPlan) -> dict:
-    """A plan with its document check recomputed against today's documents, while its guideline is current."""
-    g = await session.get(CountryGuideline, plan.guideline_id)
-    status, reason = guidelines.freshness(g) if g else ("missing", "guideline removed")
-    out = plan.model_dump(mode="json")
-    out["guideline_status"], out["guideline_reason"] = status, reason
-    if status == "current":
-        out["gap"] = rules.check_requirements(g.requirements, _as_rule_docs(await _user_docs(session, user)), plan.travel_date, plan.stay_days)
-        out["fees"] = rules.sum_fees(g.fees)
-    return out
+async def _own_journey(session: AsyncSession, user: User, journey_id: str) -> Optional[Journey]:
+    j = await session.get(Journey, journey_id)
+    return j if j and j.user_id == user.id else None
 
 
-async def list_supported_destinations(session, user, _: NoInput):
-    rows = await guidelines.coverage(session)
-    return {"guidelines": rows, "note": "Only entries with status current can be used for advice."}
+def _guideline_view(g: CountryGuideline) -> dict[str, Any]:
+    def cite(item):
+        ev = item.get("evidence") or {}
+        return ev.get("url")
 
-
-async def get_my_case(session, user: User, _: NoInput):
-    pairs = await _user_docs(session, user)
-    tasks = (await session.exec(select(Task).where(Task.user_id == user.id, Task.done == False))).all()  # noqa: E712
-    plans = (await session.exec(select(VisaPlan).where(VisaPlan.user_id == user.id, VisaPlan.status == "active"))).all()
     return {
-        "today": date.today().isoformat(),
-        "profile": {
-            "name": user.full_name, "citizenship": user.citizenship or None, "address": user.address or None,
-            "residence_status": user.residence_status or None, "studies": user.studies or None,
-            "journey_stage": user.journey_stage, "monthly_budget_eur": user.monthly_budget_eur, "savings_eur": user.savings_eur,
-        },
-        "documents": [{
-            "title": d.title, "category": d.category, "uploaded": d.uploaded_at.date().isoformat(),
-            "expires_on": d.expires_on.isoformat() if d.expires_on else None,
-            "analysis": None if not a else {
-                "status": a.status, "kind": a.document_kind, "summary": a.summary,
-                "fields": {k: v for k, v in (a.normalized or {}).items() if v is not None},
-                "issues": a.issues, "error": a.error,
-            },
-        } for d, a in pairs],
-        "open_tasks": [{"title": t.title, "due": t.due_date.isoformat() if t.due_date else None, "category": t.category} for t in tasks],
-        "active_plans": [{
-            "plan_id": p.id, "destination": p.destination_name, "purpose": p.purpose, "visa_type": p.visa_type,
-            "travel_date": p.travel_date.isoformat() if p.travel_date else None, "missing": p.gap.get("missing_or_problem", []),
-        } for p in plans],
+        "status": "current",
+        "verified": g.verified_at.date().isoformat() if g.verified_at else None,
+        "destination": g.destination_name, "visa_type": g.visa_type, "summary": g.summary,
+        "max_stay_days": g.max_stay_days, "processing_days_max": g.processing_days_max,
+        "requirements": [{**{k: r.get(k) for k in ("key", "title", "description", "mandatory", "constraints")}, "source": cite(r)} for r in g.requirements],
+        "fees": rules.sum_fees(g.fees),
+        "steps": [{**{k: s.get(k) for k in ("key", "title", "description", "days_before_travel")}, "source": cite(s)} for s in g.steps],
+        "forms": [{"form_key": f["key"], "title": f["title"]} for f in g.forms],
+        "sources": g.sources,
     }
 
 
-async def get_country_guidelines(session, user, t: Trip):
+def _journey_for_agent(view: dict, guideline_current: bool) -> dict:
+    """The journey as the agent sees it; rules from an out-of-date guideline are withheld."""
+    out = {k: view[k] for k in ("id", "title", "status", "summary", "destination_name", "purpose", "visa_type",
+                                "travel_date", "stay_days", "trip_end", "progress", "steps", "parent", "continuations")}
+    out["url"] = f"/app/journeys/{view['id']}"
+    # "status" is reserved for the tool's own outcome (created / error / not_up_to_date).
+    out["journey_status"] = out.pop("status")
+    if guideline_current:
+        out.update(requirements=view["requirements"], finances=view["finances"], automation=view["automation"], forms=view["forms"])
+    else:
+        out["rules"] = updating_message(view["destination_name"], view["guideline"]["reason"])
+    return _jsonable(out)
+
+
+# ----------------------------------------------------------------- tools
+
+async def get_my_case(session, user: User, _: NoInput, ctx: Context):
+    docs = (await session.exec(select(Document).where(Document.user_id == user.id))).all()
+    analyses = {a.document_id: a for a in (await session.exec(select(DocumentAnalysis).where(DocumentAnalysis.user_id == user.id))).all()}
+    personal = (await session.exec(select(Task).where(Task.user_id == user.id, Task.done == False, Task.journey_id == None))).all()  # noqa: E711,E712
+    js = (await session.exec(select(Journey).where(Journey.user_id == user.id, Journey.status != "archived").order_by(Journey.updated_at.desc()))).all()
+    return _jsonable({
+        "today": date.today().isoformat(),
+        "current_journey_id": ctx.journey_id,
+        "profile": {
+            "name": user.full_name, "citizenship": user.citizenship or None, "address": user.address or None,
+            "residence_status": user.residence_status or None, "studies": user.studies or None,
+            "monthly_budget_eur": user.monthly_budget_eur, "savings_eur": user.savings_eur,
+        },
+        "documents": [{
+            "title": d.title, "category": d.category, "expires_on": d.expires_on,
+            "analysis": None if not (a := analyses.get(d.id)) else {
+                "status": a.status, "kind": a.document_kind, "summary": a.summary,
+                "fields": {k: v for k, v in (a.normalized or {}).items() if v is not None}, "issues": a.issues,
+            },
+        } for d in docs],
+        "journeys": [await journeys.summary(session, j) for j in js],
+        "personal_tasks": [{"title": t.title, "due": t.due_date} for t in personal],
+    })
+
+
+async def list_supported_destinations(session, user, _: NoInput, ctx: Context):
+    return {"guidelines": await guidelines.coverage(session), "note": "Only entries with status current can be used for advice."}
+
+
+async def get_country_guidelines(session, user, t: Trip, ctx: Context):
     g, stale = await _current(session, t)
     return stale or _guideline_view(g)
 
 
-async def check_my_documents(session, user, t: TripWithDates):
+async def check_my_documents(session, user, t: TripWithDates, ctx: Context):
     g, stale = await _current(session, t)
     if stale:
         return stale
-    gap = rules.check_requirements(
-        g.requirements, _as_rule_docs(await _user_docs(session, user)),
-        date.fromisoformat(t.travel_date) if t.travel_date else None, t.stay_days,
-    )
+    gap = rules.check_requirements(g.requirements, await journeys.user_docs(session, user),
+                                   date.fromisoformat(t.travel_date) if t.travel_date else None, t.stay_days)
     return {"status": "current", "visa_type": g.visa_type, "gap": gap, "fees": rules.sum_fees(g.fees)}
 
 
-async def create_visa_plan(session, user: User, t: TripWithDates):
+async def create_journey(session, user: User, t: NewJourney, ctx: Context):
     g, stale = await _current(session, t)
     if stale:
         return stale
-    travel = date.fromisoformat(t.travel_date) if t.travel_date else None
-    gap = rules.check_requirements(g.requirements, _as_rule_docs(await _user_docs(session, user)), travel, t.stay_days)
-    fees = rules.sum_fees(g.fees)
-
-    # Replace the previous plan for the same trip, and only the tasks the agent created for it.
-    old = (await session.exec(select(VisaPlan).where(
-        VisaPlan.user_id == user.id, VisaPlan.status == "active",
-        VisaPlan.destination_code == g.destination_code, VisaPlan.purpose == g.purpose,
-    ))).all()
-    for p in old:
-        p.status = "archived"
-        session.add(p)
-        for task in (await session.exec(select(Task).where(Task.plan_id == p.id, Task.done == False))).all():  # noqa: E712
-            await session.delete(task)
-
-    plan = VisaPlan(
-        user_id=user.id, guideline_id=g.id, guideline_version=g.version, origin_code=t.origin_code,
-        destination_code=g.destination_code, destination_name=g.destination_name, purpose=g.purpose,
-        visa_type=g.visa_type, travel_date=travel, stay_days=t.stay_days, gap=gap, fees=fees,
+    if t.continues_journey_id and not await _own_journey(session, user, t.continues_journey_id):
+        return {"status": "error", "message": "continues_journey_id is not one of this user's journeys"}
+    j = await journeys.create(
+        session, user, g, t.origin_code, date.fromisoformat(t.travel_date) if t.travel_date else None, t.stay_days,
+        title=t.title, parent_id=t.continues_journey_id, chat_id=ctx.chat_id,
     )
-    session.add(plan)
-    await session.flush()
+    ctx.journey_id = ctx.journey_id or j.id
+    view = await journeys.view(session, user, j)
+    return {"status": "created", **_journey_for_agent(view, True)}
 
-    def due(days_before: Optional[int]) -> Optional[date]:
-        if travel is None or days_before is None:
-            return None
-        return max(date.today(), travel - timedelta(days=days_before))
 
-    collect_offset = next((s.get("days_before_travel") for s in g.steps if s.get("category") == "Documents"), None)
-    new_tasks = [
-        Task(user_id=user.id, plan_id=plan.id, source="agent", category="Documents",
-             title=f"{'Fix' if r['status'] == 'problem' else 'Get'}: {r['title']}", due_date=due(collect_offset))
-        for r in gap["requirements"] if r["status"] != "satisfied" and r["mandatory"]
-    ] + [
-        Task(user_id=user.id, plan_id=plan.id, source="agent", category=s.get("category", "Journey"),
-             title=s["title"], due_date=due(s.get("days_before_travel")))
-        for s in g.steps
-    ]
-    session.add_all(new_tasks)
+async def get_journey(session, user: User, inp: JourneyRef, ctx: Context):
+    j = await _own_journey(session, user, inp.journey_id)
+    if not j:
+        return {"status": "error", "message": "No such journey for this user."}
+    view = await journeys.view(session, user, j)
+    return _journey_for_agent(view, view["guideline"]["status"] == "current")
+
+
+async def update_journey(session, user: User, inp: JourneyUpdate, ctx: Context):
+    j = await _own_journey(session, user, inp.journey_id)
+    if not j:
+        return {"status": "error", "message": "No such journey for this user."}
+    if inp.status:
+        journeys.set_status(j, inp.status)
+    if inp.summary:
+        j.summary = inp.summary.strip()
+    if inp.travel_date or inp.stay_days:
+        if inp.travel_date:
+            j.travel_date = date.fromisoformat(inp.travel_date)
+        if inp.stay_days:
+            j.stay_days = inp.stay_days
+        await journeys.reschedule(session, j)
+    j.updated_at = utcnow()
+    session.add(j)
     await session.commit()
-    return {
-        "status": "created", "plan_id": plan.id, "visa_type": g.visa_type,
-        "travel_date": t.travel_date, "trip_end": gap["trip_end"],
-        "requirements": gap["requirements"], "fees": fees,
-        "tasks_created": [{"title": x.title, "due": x.due_date.isoformat() if x.due_date else None} for x in new_tasks],
-        "forms_available": [{"form_key": f["key"], "title": f["title"]} for f in g.forms],
-        "replaced_plans": len(old),
-    }
+    return {"status": "saved", "journey": await journeys.summary(session, j)}
 
 
-async def prefill_form(session, user: User, inp: PrefillInput):
-    plan = await session.get(VisaPlan, inp.plan_id)
-    if not plan or plan.user_id != user.id:
-        return {"status": "error", "message": "No such plan for this user. Create a plan first."}
-    g = await session.get(CountryGuideline, plan.guideline_id)
-    status, reason = guidelines.freshness(g)
-    if status != "current":
-        return updating_message(g.destination_name, reason)
-    template = next((f for f in g.forms if f["key"] == inp.form_key), None)
-    if not template:
-        return {"status": "error", "message": f"Unknown form_key. Available: {[f['key'] for f in g.forms]}"}
-
-    passport = {}
-    for d, a in await _user_docs(session, user):
-        if a and a.status == "done" and a.document_kind == "passport":
-            # Prefer an MRZ-verified passport, then the latest expiry.
-            score = (bool(a.normalized.get("mrz_verified")), a.normalized.get("expiry_date") or "")
-            if not passport or score > passport["_score"]:
-                passport = {**a.normalized, "_score": score}
-    name_parts = user.full_name.split()
-    sources = {
-        "profile": {
-            "full_name": user.full_name, "first_name": user.first_name,
-            "surname": name_parts[-1] if len(name_parts) > 1 else None,
-            "email": user.email, "citizenship": user.citizenship, "address": user.address,
-            "residence_status": user.residence_status, "studies": user.studies,
-        },
-        "passport": passport,
-        "plan": {
-            "destination_name": plan.destination_name, "purpose": plan.purpose, "visa_type": plan.visa_type,
-            "travel_date": plan.travel_date.isoformat() if plan.travel_date else None,
-            "stay_days": plan.stay_days,
-            "departure_date": (plan.travel_date + timedelta(days=plan.stay_days)).isoformat() if plan.travel_date and plan.stay_days else None,
-        },
-    }
-    fields = rules.fill_form(template, sources)
-    form = PrefilledForm(user_id=user.id, plan_id=plan.id, form_key=template["key"], title=template["title"],
-                         official_url=template.get("official_url"), fields=fields)
-    session.add(form)
+async def set_step_done(session, user: User, inp: StepUpdate, ctx: Context):
+    j = await _own_journey(session, user, inp.journey_id)
+    t = await session.get(Task, inp.step_id)
+    if not j or not t or t.journey_id != j.id:
+        return {"status": "error", "message": "No such step in this journey."}
+    t.done, t.done_at = inp.done, (utcnow() if inp.done else None)
+    j.updated_at = utcnow()
+    session.add_all([t, j])
     await session.commit()
-    missing = [f["label"] for f in fields if f["status"] == "missing"]
+    return {"status": "saved", "step": t.title, "done": t.done, "journey": await journeys.summary(session, j)}
+
+
+async def prefill_form(session, user: User, inp: PrefillInput, ctx: Context):
+    j = await _own_journey(session, user, inp.journey_id)
+    if not j:
+        return {"status": "error", "message": "No such journey for this user."}
+    form, error = await journeys.prefill_form(session, user, j, inp.form_key)
+    if error:
+        return {"status": "error", "message": error}
+    missing = [f["label"] for f in form.fields if f["status"] == "missing"]
     return {
         "status": "created", "form_id": form.id, "url": f"/app/forms/{form.id}", "title": form.title,
-        "filled": len(fields) - len(missing), "total": len(fields), "missing_fields": missing,
-        "note": "Missing fields could not be filled from the profile or an analysed passport.",
+        "filled": len(form.fields) - len(missing), "total": len(form.fields), "missing_fields": missing,
+        "official_pdf": pdf_spec(form.form_key) is not None,
+        "note": "Missing fields couldn't be filled from the user's documents, profile or journey. On the form page the user can "
+                "correct values and download " + ("the official form with the values written in (to print and sign)"
+                if pdf_spec(form.form_key) else "a data sheet to copy into the online application") + ".",
     }
 
 
-async def update_my_profile(session, user: User, inp: ProfileInput):
+async def update_my_profile(session, user: User, inp: ProfileInput, ctx: Context):
     changed = {k: v.strip() for k, v in inp.model_dump(exclude_none=True).items() if v and v.strip()}
     for k, v in changed.items():
         setattr(user, k, v)
@@ -305,32 +302,45 @@ async def update_my_profile(session, user: User, inp: ProfileInput):
 
 # ------------------------------------------------------------ registry
 
-Handler = Callable[[AsyncSession, User, Any], Awaitable[dict]]
+Handler = Callable[[AsyncSession, User, Any, Context], Awaitable[dict]]
 
 TOOLS: dict[str, tuple[type[In], Handler, str, str, tuple[str, ...]]] = {
     # name: (input model, handler, description, progress label, data it changes)
     "get_my_case": (NoInput, get_my_case,
-        "The user's profile, uploaded documents with their analysed fields and issues, open tasks and active visa plans. Call this first in a conversation about their case.",
+        "The user's profile, documents (with analysed fields and issues), journeys with progress, and personal tasks. "
+        "Call this first in a conversation about their situation.",
         "Reading your case", ()),
     "list_supported_destinations": (NoInput, list_supported_destinations,
         "Which destination / citizenship / purpose combinations the platform has guidelines for, and whether each is up to date.",
         "Checking supported countries", ()),
     "get_country_guidelines": (Trip, get_country_guidelines,
-        "Official requirements, fees, steps and forms for a destination, citizenship and purpose, from the platform's curated guidelines database. "
-        "The only allowed source for immigration rules.",
-        "Looking up guidelines", ()),
+        "Official requirements, fees, steps and forms for a destination, citizenship and purpose, from the platform's "
+        "verified guidelines database (each item cites its official source). The only allowed source for immigration rules.",
+        "Looking up official guidelines", ()),
     "check_my_documents": (TripWithDates, check_my_documents,
-        "Compare the user's uploaded documents with the requirements for a trip: what is satisfied, what has a problem (with the exact reason) and what is missing, plus fee totals.",
+        "Compare the user's documents with the requirements for a trip: satisfied, problem (with the exact reason) or missing, plus fee totals.",
         "Checking your documents", ()),
-    "create_visa_plan": (TripWithDates, create_visa_plan,
-        "Create (or replace) the user's visa plan for a trip and add to-do tasks with due dates for every missing document and application step. "
-        "Use when the user wants a plan; confirm destination, citizenship, purpose and, if they know it, the travel date first.",
-        "Building your plan", ("tasks", "plans")),
+    "create_journey": (NewJourney, create_journey,
+        "Create a journey: the user's plan for a trip or move. Builds the pathway (documents to get, then application steps "
+        "with due dates), and returns documents needed, financial overview and automation options. Confirm destination, "
+        "citizenship and purpose first; ask for the travel date and length of stay if unknown. Use continues_journey_id for a next leg.",
+        "Building your journey", ("journeys", "tasks")),
+    "get_journey": (JourneyRef, get_journey,
+        "A journey with its pathway steps (ids, done or not), documents needed, finances and automation options.",
+        "Opening your journey", ()),
+    "update_journey": (JourneyUpdate, update_journey,
+        "Change a journey: status (planning, active, completed, archived; completed journeys can be reopened), travel date "
+        "or length of stay (due dates are recomputed), or a short summary of where the user stands.",
+        "Updating your journey", ("journeys", "tasks")),
+    "set_step_done": (StepUpdate, set_step_done,
+        "Mark a journey step as done or not done.",
+        "Updating your progress", ("journeys", "tasks")),
     "prefill_form": (PrefillInput, prefill_form,
-        "Prefill an application form for a plan from the user's profile, analysed passport and plan. Returns a link the user can open, plus which fields are still empty.",
-        "Prefilling the form", ("forms",)),
+        "Prefill an application form for a journey from the user's profile, analysed passport and journey dates. "
+        "Returns a link and the fields the user still has to complete.",
+        "Prefilling the form", ("forms", "journeys")),
     "update_my_profile": (ProfileInput, update_my_profile,
-        "Save details the user told you about themselves (citizenship, address, status, studies or occupation) to their profile.",
+        "Save details the user told you about themselves (citizenship, address, status, studies or occupation).",
         "Saving to your profile", ("profile",)),
 }
 
@@ -345,7 +355,7 @@ def definitions() -> list[dict]:
     return out
 
 
-async def run(session: AsyncSession, user: User, name: str, raw_input: Any) -> tuple[dict, bool]:
+async def run(session: AsyncSession, user: User, name: str, raw_input: Any, ctx: Optional[Context] = None) -> tuple[dict, bool]:
     """Returns (result, is_error)."""
     entry = TOOLS.get(name)
     if not entry:
@@ -356,4 +366,4 @@ async def run(session: AsyncSession, user: User, name: str, raw_input: Any) -> t
     except ValidationError as e:
         # Also catches inputs cut short by eager streaming: the call never runs.
         return {"error": "INVALID_INPUT", "details": e.errors(include_url=False, include_context=False)}, True
-    return await handler(session, user, inp), False
+    return await handler(session, user, inp, ctx or Context()), False

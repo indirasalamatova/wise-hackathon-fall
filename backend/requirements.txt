@@ -17,3 +17,6 @@ google-auth>=2.35.0
 requests>=2.32.0
 anthropic==1.15.0
 google-genai==2.31.0
+pypdf==6.21.0
+pdfplumber==0.11.10
+reportlab==5.0.1

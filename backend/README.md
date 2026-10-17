@@ -1,10 +1,10 @@
 # Unbound backend
 
 FastAPI + SQLModel (Postgres) + RustFS (S3) + Google Gemini or Anthropic Claude.
+See the [root README](../README.md) for running and deploying.
 
 ```bash
-docker compose up -d --build                     # from the repo root
-docker exec -w /app unbound_backend python -m pytest -q tests/
+docker compose up -d --build                     # from the repo root: API, worker, Postgres, storage
 ```
 
 Settings live in the repo-root `.env` (see `.env.example`): `GOOGLE_CLIENT_ID`, `JWT_SECRET`, and an
@@ -34,22 +34,21 @@ improve its products. Use a paid Gemini key (or Claude) before real users upload
 ## Agents
 
 ```
-           user message
+           user message (optionally about a journey)
                 │
-        ┌───────▼────────┐  tools (app/agents/tools.py)        deterministic (app/agents/rules.py)
-        │  Chat agent    │──► get_my_case                  ──► dates, MRZ check digits, validity
-        │ orchestrator.py│──► get_country_guidelines  ──┐      windows, exact fee sums, gap check,
-        └───────┬────────┘──► check_my_documents       │      form filling
-                │          ──► create_visa_plan  (writes plan + to-do tasks)
-                │          ──► prefill_form      (writes a prefilled form)
-                │          ──► update_my_profile
-                │                                       │
-                │                     app/agents/guidelines.py: freshness gate
+        ┌───────▼────────┐  tools (app/agents/tools.py)        deterministic code
+        │  Chat agent    │──► get_my_case                   rules.py: dates, MRZ check digits,
+        │ orchestrator.py│──► get_country_guidelines ──┐    validity windows, exact fee sums,
+        └───────┬────────┘──► check_my_documents      │    gap check, form filling
+                │          ──► create_journey / get_journey / update_journey / set_step_done
+                │          ──► prefill_form, update_my_profile      journeys.py: pathway, money,
+                │                                      │            automation, calendar
+                │                     guidelines.py: freshness gate
                 │                     current → content · stale/missing → "being updated soon"
         ┌───────▼────────┐
-        │ Document agent │  on every upload (background): the model reads the file into a fixed
-        │  documents.py  │  schema, values as printed → rules.normalize_extraction → stored
-        └────────────────┘  in document_analyses (fields, issues, MRZ verified or not)
+        │ Document agent │  queued on every upload, run by the worker: the model reads the file
+        │  documents.py  │  into a fixed schema, values as printed → rules.normalize_extraction
+        └────────────────┘  → document_analyses (fields, issues, MRZ verified or not)
 ```
 
 What the model does and doesn't decide:
@@ -61,7 +60,7 @@ What the model does and doesn't decide:
   currency), task due dates, and form values. A constraint whose input is unknown is a problem,
   not a pass.
 - **Stale guidelines are withheld in code.** When an entry is unverified, older than
-  `GUIDELINE_MAX_AGE_DAYS`, or past its `valid_until`, the tools return only a "not up to date"
+  `GUIDELINE_MAX_AGE_DAYS` (pipeline entries: `PIPELINE_MAX_AGE_DAYS`), or past its `valid_until`, the tools return only a "not up to date"
   status, so the model has nothing outdated to repeat. The system prompt tells it to say the
   country's information is being updated and will be available soon.
 
@@ -70,33 +69,93 @@ blocks replay unchanged). Replies stream to the browser as server-sent events fr
 `POST /api/chat/sessions/{id}/messages`: `text`, `tool` (start/done/error), `done` (which data
 changed) and `error`.
 
-## Country guidelines (for the pipeline)
+## Journeys
 
-Table `country_guidelines`, one row per destination + citizenship (`*` = any) + purpose. Load and
-update with the importer, which validates against `app/agents/schema.py` and bumps `version`:
+A journey is one trip or move. The assistant creates it with `create_journey`; the user then works
+through it in the app, marks steps done, reopens it later, or continues it with a next leg
+(`parent_id`). Stored: the journey and its pathway (tasks with `journey_id`, documents first, then
+the application steps, with due dates counted back from the travel date). Computed live every time
+it's read (`app/agents/journeys.py`), so it never goes stale:
+
+- **Documents needed:** each requirement checked against the user's documents; a document that
+  satisfies one ticks its pathway step.
+- **Money:** the standard fee total per currency, alternative fees (by way of applying or applicant
+  group: you pay one), what's paid and left, proof of funds against savings, living costs at the
+  user's budget.
+- **Automation:** prefill forms, pay fees (simulated Wise; no money moves), download the deadlines as
+  a calendar file, drafted emails to whoever issues a missing document, and uploads.
+
+Conversations can belong to a journey (`chat_sessions.journey_id`); the agent then works on it.
+
+## Application forms
+
+`app/forms/`. Prefilling a form (from a journey, or by the agent with `prefill_form`) fills its
+fields from the passport analysis, the latest analysis of each other document (accommodation,
+enrolment, employment contract, insurance), the profile and the journey; each value records where it
+came from. Nothing is guessed: a value that couldn't be read stays empty. The user can correct any
+field (`PATCH /api/forms/{id}`), and then downloads:
+
+- **The official form, filled in** (`GET /api/forms/{id}/official.pdf`): for the EU Schengen visa
+  application and the Hungarian residence permit application (OIF form 9). The official PDFs aren't
+  fillable, so `pdf.py` finds each field's printed label on the page (pdfplumber), writes the value
+  next to it on an overlay (reportlab, DejaVu font, so accents and Cyrillic work) and merges it
+  onto the original (pypdf). Placements are anchored to labels, not coordinates (`templates.py`); a
+  label that isn't found, or a gap too small for the value, is skipped rather than written over the
+  form, and listed in the `X-Unplaced-Fields` header. The PDF is fetched from its official page
+  (allowlisted domains only), cached for a day and kept in storage in case the site is down.
+- **A data sheet** (`GET /api/forms/{id}/datasheet.pdf`): every field, its value and its source, for
+  forms that are submitted online.
+
+Checkboxes that would need a guess (passport type, first application) are left for the applicant.
+
+## Guidelines pipeline (daily)
+
+`app/pipeline/`, run by the worker once a day (and on demand from **Data sources** in the app, for
+`ADMIN_EMAILS`). For each target in `targets.py` (Hungary: tourism, study, work, job search, family,
+any citizenship):
+
+1. **Fetch** the official seed pages, plus pages found by web search (Gemini with Google Search),
+   which are kept only if they resolve to an allowlisted official domain (`fetch.ALLOWED_DOMAINS`).
+   HTTPS with verified certificates only, `robots.txt` respected, one request per second per host.
+   Every page is stored as a snapshot.
+2. If the pages are unchanged since the published version, **re-verify** its quotes in code and
+   refresh `verified_at`; no model call.
+3. Otherwise **extract**: the model reads the pages and proposes requirements, fees and steps, each
+   with evidence (source URL + verbatim quote in the original language).
+4. **Verify** (`verify.py`, no model): a fact is kept only if its quote is found on that page as
+   fetched, and every number it states (amounts with their currency, months, days) appears in that
+   quote. Unproven constraints and deadlines are removed; unproven items are dropped and logged.
+5. **Publish or hold**: published only if at least 3 requirements survive and no more than 40% were
+   lost compared with the previous version; otherwise the previous entry stays.
+
+Pipeline entries count as current for `PIPELINE_MAX_AGE_DAYS` (default 3). If the pipeline keeps
+failing past that, agents stop using the entry and tell users the country is being updated.
+
+Manual entries can still be loaded with the importer (validated against `app/agents/schema.py`):
 
 ```bash
 docker exec -w /app unbound_backend python -m app.cli.import_guidelines data/guidelines/ --dry-run
-docker exec -w /app unbound_backend python -m app.cli.import_guidelines data/guidelines/hu-from-ru-tourism.json
 ```
 
-Format: see `data/guidelines/hu-from-ru-tourism.json`. Key rules:
+`data/guidelines/hu-from-ru-tourism.json` is an unverified draft from early development, superseded
+by the pipeline's entries.
 
-- `requirements[].doc_kind` is matched against what the document agent detected (or the upload's
-  type). Supported `constraints`: `valid_months_after_stay`, `max_age_days`, `issued_within_years`,
-  `min_amount` + `min_amount_currency`.
-- `fees[].amount` is a decimal string, or `null` when it varies (listed, never summed).
-- `steps[].days_before_travel` becomes the task due date.
-- `forms[].fields[].source` is one or more of `profile.*`, `passport.*`, `plan.*` (allowed names in
-  `FORM_SOURCES`); `format` is `text`, `upper` or `date:DD-MM-YYYY`. Unfillable fields stay empty.
-- **`verified_at` is set only after a person or the pipeline has checked the entry against its
-  `sources`.** Until then agents treat it as out of date.
+## Worker
 
-`data/guidelines/hu-from-ru-tourism.json` is a **draft written without checking current rules**
-and is imported unverified. Review it against the listed official sources before setting
-`verified_at`.
+`python -m app.worker` (its own container): document analysis queue (claims pending analyses from
+the database, so uploads are analysed even across restarts) and the pipeline schedule. A Postgres
+advisory lock keeps the pipeline to one run at a time.
 
 ## Tests
 
-- `tests/test_rules.py`: the deterministic rules (dates, MRZ, fees, requirement checks, form fill).
-  Run with `pip install -r requirements-dev.txt` first.
+```bash
+docker exec -w /app unbound_backend python -m pytest -q tests/
+```
+
+- `test_rules.py`: dates, MRZ, fees, requirement checks, form fill.
+- `test_forms_pdf.py`: values land next to their labels, missing labels and tight gaps are skipped,
+  every form placement refers to a real field, the data sheet renders Unicode.
+- `test_verify.py`: quote matching, amounts and currencies, dropping unproven facts, publish rules.
+- `test_integration.py` (real database, no model calls): the journey lifecycle (pathway, finances,
+  automation, payments, prefill, rescheduling, complete and reopen, next leg, calendar, stale
+  guideline, isolation) and the pipeline (publish, re-verify without the model, hold, failure).

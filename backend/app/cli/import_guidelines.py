@@ -16,11 +16,10 @@ import sys
 from pathlib import Path
 
 from pydantic import ValidationError
-from sqlmodel import select
 
+from app.agents import guidelines
 from app.agents.schema import GuidelineIn
 from app.core.database import async_session_maker, init_db
-from app.models import CountryGuideline, utcnow
 
 
 def load(path: Path) -> list[GuidelineIn]:
@@ -36,28 +35,11 @@ def load(path: Path) -> list[GuidelineIn]:
     return out
 
 
-async def upsert(items: list[GuidelineIn]) -> None:
+async def upsert_all(items: list[GuidelineIn]) -> None:
     await init_db()
     async with async_session_maker() as session:
         for g in items:
-            existing = (await session.exec(select(CountryGuideline).where(
-                CountryGuideline.destination_code == g.destination_code,
-                CountryGuideline.origin_code == g.origin_code,
-                CountryGuideline.purpose == g.purpose,
-            ))).first()
-            data = g.model_dump(mode="json")
-            data["verified_at"] = g.verified_at
-            data["valid_until"] = g.valid_until
-            if existing:
-                for k, v in data.items():
-                    setattr(existing, k, v)
-                existing.version += 1
-                existing.updated_at = utcnow()
-                session.add(existing)
-                action = f"updated to v{existing.version}"
-            else:
-                session.add(CountryGuideline(**data))
-                action = "created"
+            _, action = await guidelines.upsert(session, g)
             state = "verified" if g.verified_at else "UNVERIFIED (agents will treat it as not up to date)"
             print(f"{g.destination_code} from {g.origin_code} / {g.purpose}: {action}, {state}")
         await session.commit()
@@ -72,7 +54,7 @@ def main() -> None:
     if args.dry_run:
         print(f"{len(items)} guideline(s) valid")
         return
-    asyncio.run(upsert(items))
+    asyncio.run(upsert_all(items))
 
 
 if __name__ == "__main__":

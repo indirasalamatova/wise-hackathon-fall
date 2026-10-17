@@ -1,12 +1,5 @@
 /** Static reference data (countries, visa costs, stages). Everything about the user comes from the API. */
-import type { CountryCode, JourneyStage } from './types'
-
-export const journeyStages: JourneyStage[] = [
-  { key: 'apply', label: 'Apply', description: 'Choosing a pathway and preparing your application.' },
-  { key: 'arrive', label: 'Arrive', description: 'Registering your address and collecting your residence card.' },
-  { key: 'stay', label: 'Stay', description: 'Keeping your permit valid and renewing it on time.' },
-  { key: 'transition', label: 'Transition', description: 'Changing status after your studies or for a new job.' },
-]
+import type { CountryCode } from './types'
 
 export const budgetCountries: {
   code: CountryCode

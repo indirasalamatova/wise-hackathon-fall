@@ -1,0 +1,8 @@
+# HTTPS certificates are issued and renewed automatically for $DOMAIN.
+{$DOMAIN} {
+    encode gzip
+    reverse_proxy frontend:80 {
+        # Server-sent events from the chat: pass through immediately.
+        flush_interval -1
+    }
+}

@@ -21,13 +21,25 @@ DOC_KINDS: tuple[str, ...] = DocKind.__args__  # type: ignore[attr-defined]
 # Where a form field's value may come from (see rules.fill_form).
 FORM_SOURCES = {
     "profile": ["full_name", "first_name", "surname", "email", "citizenship", "address", "residence_status", "studies"],
-    "passport": ["surname", "given_names", "full_name", "document_number", "nationality", "date_of_birth", "issue_date", "expiry_date", "issuing_country", "sex"],
+    "passport": ["surname", "given_names", "full_name", "document_number", "nationality", "date_of_birth", "place_of_birth",
+                 "issue_date", "expiry_date", "issuing_country", "sex"],
+    # Facts read off the user's other analysed documents of that kind.
+    "accommodation": ["issuer_name", "address"],
+    "enrolment": ["issuer_name", "address"],
+    "employment_contract": ["issuer_name", "address"],
+    "insurance": ["issuer_name", "document_number", "expiry_date"],
     "plan": ["destination_name", "purpose", "visa_type", "travel_date", "stay_days", "departure_date"],
 }
 
 
 class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+class Evidence(Strict):
+    """Where a fact comes from: the official page and the exact text on it (original language)."""
+    url: str
+    quote: str
 
 
 class Constraints(Strict):
@@ -45,6 +57,7 @@ class Requirement(Strict):
     doc_kind: DocKind
     mandatory: bool = True
     constraints: Constraints = Field(default_factory=Constraints)
+    evidence: Optional[Evidence] = None
 
 
 class Fee(Strict):
@@ -54,6 +67,7 @@ class Fee(Strict):
     currency: str = Field(min_length=3, max_length=3)
     mandatory: bool = True
     note: Optional[str] = None
+    evidence: Optional[Evidence] = None
 
     @field_validator("amount")
     @classmethod
@@ -74,6 +88,7 @@ class Step(Strict):
     description: str
     days_before_travel: Optional[int] = Field(default=None, description="Due date offset; null for no deadline")
     category: Literal["Documents", "Finances", "Journey", "Appointment"] = "Journey"
+    evidence: Optional[Evidence] = None
 
 
 class FormField(Strict):

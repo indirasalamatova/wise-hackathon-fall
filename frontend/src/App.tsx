@@ -8,7 +8,9 @@ import { CostsPage } from '@/pages/app/Costs'
 import { DocumentsPage } from '@/pages/app/Documents'
 import { FormViewPage } from '@/pages/app/FormView'
 import { FinancesPage } from '@/pages/app/Finances'
-import { JourneyPage } from '@/pages/app/Journey'
+import { AdminDataPage } from '@/pages/app/AdminData'
+import { JourneyDetailPage } from '@/pages/app/JourneyDetail'
+import { JourneysPage } from '@/pages/app/Journeys'
 import { ProfilePage } from '@/pages/app/Profile'
 import { TodoPage } from '@/pages/app/Todo'
 import { GOOGLE_CLIENT_ID, LoginPage, SignupPage } from '@/pages/public/Auth'
@@ -57,7 +59,10 @@ export default function App() {
                 <Route path="/app" element={<AppLayout />}>
                   <Route index element={<AssistantPage />} />
                   <Route path="assistant" element={<Navigate to="/app" replace />} />
-                  <Route path="journey" element={<JourneyPage />} />
+                  <Route path="journeys" element={<JourneysPage />} />
+                  <Route path="journeys/:id" element={<JourneyDetailPage />} />
+                  <Route path="journey" element={<Navigate to="/app/journeys" replace />} />
+                  <Route path="admin/data" element={<AdminDataPage />} />
                   <Route path="documents" element={<DocumentsPage />} />
                   <Route path="forms/:id" element={<FormViewPage />} />
                   <Route path="finances" element={<FinancesPage />} />

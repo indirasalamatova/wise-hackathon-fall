@@ -132,3 +132,9 @@ def test_nationality_name_is_not_a_mismatch_with_mrz_code():
     assert not any(i["field"] == "nationality" for i in issues)
     _, issues = normalize_extraction({"document_kind": "passport", "nationality": "RUS", "mrz": {"line1": MRZ1, "line2": MRZ2}}, TODAY)
     assert any(i["field"] == "nationality" for i in issues)
+
+
+def test_issuing_country_comes_from_the_mrz():
+    out, issues = normalize_extraction({"document_kind": "passport", "issuing_country": "Utopia", "mrz": {"line1": MRZ1, "line2": MRZ2}}, TODAY)
+    assert out["issuing_country"] == "UTO"
+    assert not any(i["field"] == "issuing_country" for i in issues)

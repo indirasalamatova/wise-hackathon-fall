@@ -10,6 +10,8 @@ import { useCase, useToast } from '@/store/context'
 type Filter = 'open' | 'done' | 'all'
 
 function TaskRow({ task }: { task: Task }) {
+  const { journeys } = useCase()
+  const journey = task.journeyId ? journeys.find((x) => x.id === task.journeyId) : undefined
   const { toggleTask, removeTask } = useCase()
   const { toast } = useToast()
   const soon = !task.done && task.due && daysUntil(task.due) <= 7 && daysUntil(task.due) >= 0
@@ -29,7 +31,13 @@ function TaskRow({ task }: { task: Task }) {
       <div className="min-w-0 flex-1">
         <p className={cn('text-[15px] font-semibold', task.done && 'text-muted line-through')}>{task.title}</p>
         <p className="text-xs text-muted">
-          {task.category}
+          {journey ? (
+            <Link to={`/app/journeys/${journey.id}`} className="font-semibold text-forest-950 underline underline-offset-2">
+              {journey.title}
+            </Link>
+          ) : (
+            task.category
+          )}
           {task.due && ` · ${shortDate(task.due)} · ${relativeDays(task.due)}`}
         </p>
       </div>

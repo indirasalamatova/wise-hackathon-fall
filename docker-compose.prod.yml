@@ -1,0 +1,106 @@
+# Production: one server. Everything is behind Caddy (automatic HTTPS for $DOMAIN);
+# only ports 80/443 are exposed. Configure with a root .env (see .env.example), then:
+#   docker compose -f docker-compose.prod.yml up -d --build
+
+x-backend-env: &backend-env
+  DATABASE_URL: postgresql+asyncpg://unbound:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/unbound
+  S3_ENDPOINT_URL: http://storage:9000
+  S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY:?Set S3_ACCESS_KEY}
+  S3_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:?Set S3_SECRET_KEY}
+  S3_BUCKET_NAME: unbound-docs
+  CORS_ORIGINS: https://${DOMAIN:?Set DOMAIN}
+  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?Set GOOGLE_CLIENT_ID}
+  JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
+  ADMIN_EMAILS: ${ADMIN_EMAILS:-}
+  LLM_PROVIDER: ${LLM_PROVIDER:-}
+  GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
+  GEMINI_FALLBACK_MODELS: ${GEMINI_FALLBACK_MODELS:-gemini-3-flash-preview,gemini-flash-latest}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-5-5}
+  AGENT_EFFORT: ${AGENT_EFFORT:-high}
+  GUIDELINE_MAX_AGE_DAYS: ${GUIDELINE_MAX_AGE_DAYS:-90}
+  PIPELINE_MAX_AGE_DAYS: ${PIPELINE_MAX_AGE_DAYS:-3}
+  PIPELINE_HOUR_UTC: ${PIPELINE_HOUR_UTC:-3}
+  PIPELINE_ENABLED: ${PIPELINE_ENABLED:-true}
+  CHAT_RATE_LIMIT_PER_HOUR: ${CHAT_RATE_LIMIT_PER_HOUR:-60}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: unbound
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: unbound
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U unbound -d unbound"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  storage:
+    image: rustfs/rustfs:latest
+    restart: unless-stopped
+    environment:
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY}
+    volumes:
+      - storage_data:/data
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment: *backend-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      storage:
+        condition: service_started
+
+  worker:
+    build: ./backend
+    restart: unless-stopped
+    command: ["python", "-m", "app.worker"]
+    environment: *backend-env
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      storage:
+        condition: service_started
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on:
+      - frontend
+
+volumes:
+  postgres_data:
+  storage_data:
+  caddy_data:

@@ -193,6 +193,9 @@ def normalize_extraction(raw: dict[str, Any], today: Optional[date] = None) -> t
         "sex": {"M": "M", "F": "F", "MALE": "M", "FEMALE": "F", "М": "M", "Ж": "F", "МУЖ": "M", "ЖЕН": "F"}.get((raw.get("sex") or "").strip().upper().rstrip(".")),
         "document_number": re.sub(r"\s+", "", raw.get("document_number") or "") or None,
         "nationality": (raw.get("nationality") or "").strip().upper() or None,
+        "place_of_birth": (raw.get("place_of_birth") or "").strip() or None,
+        "issuer_name": (raw.get("issuer_name") or "").strip() or None,
+        "address": " ".join((raw.get("address") or "").split()) or None,
         "issuing_country": (raw.get("issuing_country") or "").strip().upper() or None,
         "amount": None,
         "currency": (raw.get("currency") or "").strip().upper() or None,
@@ -215,10 +218,11 @@ def normalize_extraction(raw: dict[str, Any], today: Optional[date] = None) -> t
         res = parse_td3_mrz(mrz.get("line1"), mrz.get("line2"), today)
         if res.valid:
             out["mrz_verified"] = True
-            for key in ("document_number", "nationality", "date_of_birth", "expiry_date", "surname", "given_names", "sex"):
+            for key in ("document_number", "nationality", "date_of_birth", "expiry_date", "surname", "given_names", "sex", "issuing_country"):
                 visual, machine = out.get(key), res.fields.get(key)
                 # A printed nationality is often a name ("UTOPIAN"), the MRZ a code ("UTO"): only compare codes.
-                comparable = key != "nationality" or (visual and len(visual) == 3)
+                # Printed nationality/issuer is often a name ("UTOPIAN"), the MRZ a code ("UTO"): only compare codes.
+                comparable = key not in ("nationality", "issuing_country") or (visual and len(visual) == 3)
                 if machine and visual and visual != machine and comparable and key not in ("surname", "given_names"):
                     issues.append({"field": key, "severity": "warning", "message": f"Printed {key.replace('_', ' ')} ({visual}) differs from the MRZ ({machine}). Using the MRZ."})
                 if machine:
@@ -384,13 +388,15 @@ def fill_form(template: dict[str, Any], sources: dict[str, Any]) -> list[dict[st
     """
     out = []
     for f in template.get("fields", []):
-        value = None
+        value, used = None, None
         for path in [f["source"]] if isinstance(f.get("source"), str) else (f.get("source") or []):
             obj: Any = sources
             for part in path.split("."):
                 obj = obj.get(part) if isinstance(obj, dict) else None
             value = _fmt(obj, f.get("format", "text"))
             if value:
+                used = path
                 break
-        out.append({"key": f["key"], "label": f["label"], "value": value, "status": "filled" if value else "missing", "hint": f.get("hint")})
+        out.append({"key": f["key"], "label": f["label"], "value": value, "status": "filled" if value else "missing",
+                    "hint": f.get("hint"), "source": used})
     return out

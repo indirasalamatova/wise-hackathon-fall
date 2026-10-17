@@ -1,0 +1,16 @@
+# Local production: the production stack on your machine, without a domain or HTTPS.
+# Used by ./scripts/local-prod.sh together with docker-compose.prod.yml.
+services:
+  backend:
+    environment:
+      CORS_ORIGINS: http://localhost:8080
+  worker:
+    environment:
+      CORS_ORIGINS: http://localhost:8080
+  frontend:
+    # nginx serves the built app and proxies /api, as in production.
+    ports:
+      - "127.0.0.1:${LOCAL_PORT:-8080}:80"
+  caddy:
+    # HTTPS/domain only make sense on a server; start it with --profile https if you want it.
+    profiles: ["https"]

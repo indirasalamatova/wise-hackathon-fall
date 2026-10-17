@@ -42,7 +42,9 @@ and the API only returns rows owned by the caller.
 | Payments | `GET/POST /api/payments` (records a simulated Wise payment; no money moves) |
 | Notifications | `GET /api/notifications`, `POST /api/notifications/{id}/read`, `POST /api/notifications/mark-all-read` |
 | Assistant | `GET/POST/DELETE /api/chat/sessions`, `GET /api/chat/sessions/{id}/messages`, `POST /api/chat/sessions/{id}/messages` (server-sent events) |
-| Document analysis, plans, forms | `POST /api/documents/{id}/analyze`, `GET /api/plans`, `GET/DELETE /api/forms/{id}`, `GET /api/guidelines/coverage` |
+| Journeys | `GET /api/journeys`, `GET/PATCH/DELETE /api/journeys/{id}`, `POST /api/journeys/{id}/forms/{form_key}`, `POST /api/journeys/{id}/fees/{fee_key}/pay`, `GET /api/journeys/{id}/calendar.ics` |
+| Document analysis, forms | `POST /api/documents/{id}/analyze`, `GET/PATCH/DELETE /api/forms/{id}`, `GET /api/forms/{id}/official.pdf`, `GET /api/forms/{id}/datasheet.pdf`, `GET /api/guidelines/coverage` |
+| Data sources (admins) | `GET /api/admin/pipeline`, `POST /api/admin/pipeline/runs` |
 
 Uploads: PDF, JPG or PNG up to 10 MB, checked by file contents, not the name. Re-uploading the same
 file is refused. Documents with an expiry date within 60 days create a notification.
@@ -67,7 +69,7 @@ src/
     case/                DocumentList, Upload / Pay dialogs, expiry rules
   pages/
     public/              Landing, OptionsWizard, Login, Signup
-    app/                 Assistant, Journey, Documents, Finances, Costs, Todo, Profile
+    app/                 Assistant, Journeys, JourneyDetail, Documents, FormView, Finances, Costs, Todo, Profile, AdminData
 ```
 
 Routes: `/`, `/login`, `/signup`, `/app` (assistant), `/app/journey`, `/app/documents`,

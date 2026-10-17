@@ -40,15 +40,17 @@ services:
   backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile
+      args:
+        DEV: "1"
     container_name: unbound_backend
+    # Dev: reload on code changes (the production compose file runs without it).
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
-    environment:
+    environment: &backend-env
       DATABASE_URL: postgresql+asyncpg://unbound_user:unbound_password@postgres:5432/unbound_db
-      REDIS_URL: redis://redis:6379/0
       S3_ENDPOINT_URL: http://storage:9000
       S3_ACCESS_KEY_ID: minioadmin
       S3_SECRET_ACCESS_KEY: minioadmin
@@ -57,22 +59,43 @@ services:
       # Set both in a root .env file (see .env.example). GOOGLE_CLIENT_ID must match the frontend's.
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
       # AI agents (chat + document analysis). Without a key the rest of the app still works.
       # LLM_PROVIDER: gemini or anthropic; unset = gemini when GEMINI_API_KEY is set.
       LLM_PROVIDER: ${LLM_PROVIDER:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
+      GEMINI_FALLBACK_MODELS: ${GEMINI_FALLBACK_MODELS:-gemini-3-flash-preview,gemini-flash-latest}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-5-5}
       AGENT_EFFORT: ${AGENT_EFFORT:-high}
-      # Guidelines verified longer ago than this are treated as out of date.
+      # Manual guidelines verified longer ago than this are out of date; pipeline ones after PIPELINE_MAX_AGE_DAYS.
       GUIDELINE_MAX_AGE_DAYS: ${GUIDELINE_MAX_AGE_DAYS:-90}
+      PIPELINE_MAX_AGE_DAYS: ${PIPELINE_MAX_AGE_DAYS:-3}
+      PIPELINE_HOUR_UTC: ${PIPELINE_HOUR_UTC:-3}
+      PIPELINE_ENABLED: ${PIPELINE_ENABLED:-true}
+      CHAT_RATE_LIMIT_PER_HOUR: ${CHAT_RATE_LIMIT_PER_HOUR:-60}
     depends_on:
       postgres:
         condition: service_healthy
       storage:
         condition: service_started
-      redis:
+
+  # Document analysis queue + daily guidelines pipeline.
+  worker:
+    build:
+      context: ./backend
+      args:
+        DEV: "1"
+    container_name: unbound_worker
+    command: ["python", "-m", "app.worker"]
+    volumes:
+      - ./backend:/app
+    environment: *backend-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      storage:
         condition: service_started
 
 volumes:

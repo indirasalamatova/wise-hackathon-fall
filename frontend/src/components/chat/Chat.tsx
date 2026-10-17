@@ -137,9 +137,18 @@ function History_({
   )
 }
 
-export function Chat() {
+/**
+ * `journeyId`: start new conversations about this journey. `openChatId`: open this saved
+ * conversation. `initialPrompt`: put this text in the box. All come from the URL.
+ */
+export function Chat({
+  journeyId,
+  openChatId,
+  initialPrompt,
+  fresh = false,
+}: { journeyId?: string; openChatId?: string; initialPrompt?: string; fresh?: boolean } = {}) {
   const { user } = useAuth()
-  const { refresh } = useCase()
+  const { refresh, journeys } = useCase()
   const { toast } = useToast()
   const [current, setCurrent] = usePersistentState<string | null>('chat-current', null)
   const [sessions, setSessions] = useState<ChatSessionInfo[]>([])
@@ -154,9 +163,32 @@ export function Chat() {
   const loading = !!current && loaded.for !== current
   const setMessages = (fn: (ms: ChatMessage[]) => ChatMessage[]) => setLoaded((l) => ({ ...l, list: fn(l.list) }))
   const [busy, setBusy] = useState(false)
-  const [draft, setDraft] = useState('')
+  const [draft, setDraft] = useState(initialPrompt ?? '')
+  // The journey new conversations are bound to (from the URL).
+  const [boundJourney, setBoundJourney] = useState<string | undefined>(journeyId)
+  const [params, setParams] = useState({ journeyId, openChatId, initialPrompt })
+  if (params.journeyId !== journeyId || params.openChatId !== openChatId || params.initialPrompt !== initialPrompt) {
+    // The URL changed while mounted (e.g. "Ask about this journey"): adjust during render.
+    setParams({ journeyId, openChatId, initialPrompt })
+    setBoundJourney(journeyId)
+    if (initialPrompt) setDraft(initialPrompt)
+    openFromUrl(openChatId, journeyId, fresh)
+  }
+  const [urlApplied, setUrlApplied] = useState(false)
+  if (!urlApplied) {
+    setUrlApplied(true)
+    openFromUrl(openChatId, journeyId, fresh)
+  }
+  const currentSession = sessions.find((s) => s.id === current)
+  const chatJourneyId = current ? currentSession?.journeyId : boundJourney
+  const chatJourney = journeys.find((j) => j.id === chatJourneyId)
   const scroller = useRef<HTMLDivElement>(null)
   const abort = useRef<AbortController | null>(null)
+
+  function openFromUrl(chatId?: string, journey?: string, startNew = false) {
+    if (chatId) setCurrent(chatId)
+    else if (journey || startNew) setCurrent(null) // a fresh conversation (about that journey, if given)
+  }
 
   const loadSessions = useCallback(() => api.listChats().then(setSessions, () => {}), [])
   useEffect(() => {
@@ -191,7 +223,7 @@ export function Chat() {
     let chatId = current
     try {
       if (!chatId) {
-        chatId = (await api.createChat()).id
+        chatId = (await api.createChat(boundJourney)).id
         show(chatId, [])
         setCurrent(chatId)
       }
@@ -244,7 +276,13 @@ export function Chat() {
         </span>
         <div className="min-w-0 flex-1">
           <p className="font-semibold">Unbound assistant</p>
-          <p className="truncate text-[13px] text-muted">Plans your visa, checks your documents, prefills forms</p>
+          {chatJourney ? (
+            <Link to={`/app/journeys/${chatJourney.id}`} className="block truncate text-[13px] font-semibold text-brick-700 underline underline-offset-2">
+              About: {chatJourney.title}
+            </Link>
+          ) : (
+            <p className="truncate text-[13px] text-muted">Plans journeys, checks documents, prefills forms</p>
+          )}
         </div>
         <History_
           sessions={sessions}
