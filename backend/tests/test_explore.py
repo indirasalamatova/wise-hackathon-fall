@@ -1,6 +1,6 @@
 import pytest
 
-from app.explore import alpha2, decide, pick_guideline
+from app.explore import Decision, alpha2, alternatives, decide, distance_km, easiest, geo, pick_guideline, routes
 from app.models import CountryGuideline, VisaRequirement
 from app.services.visa_matrix import DATA_FILE, parse_requirement, read_csv
 
@@ -91,3 +91,50 @@ def test_pick_guideline_prefers_exact_citizenship():
     assert pick_guideline(rows, "HU", "KZ", "tourism").entry_type == "evisa"
     assert pick_guideline(rows, "HU", "RU", "tourism").origin_code == "*"
     assert pick_guideline(rows, "HU", "KZ", "study") is None
+
+
+def dec(code: str, status: str, basis="indicative", stay=None, notes=None) -> Decision:
+    return Decision(code=code, status=status, basis=basis, stay_days=stay, notes=notes or [])
+
+
+def test_geo_has_globe_countries():
+    places = geo()
+    assert len(places) > 150 and places["HU"]["region"] == "Europe"
+    assert 200 < distance_km(places["HU"], places["AT"]) < 500
+
+
+def test_alternatives_prefer_visa_free_then_nearer():
+    ds = {
+        "GB": dec("GB", "visa_required"),
+        "IE": dec("IE", "evisa"),          # nearest, but eVisa
+        "FR": dec("FR", "visa_free"),      # near and visa-free
+        "MA": dec("MA", "visa_free"),      # visa-free, further
+        "RS": dec("RS", "visa_required"),  # not an alternative
+        "RU": dec("RU", "home", "home"),   # home is never suggested
+    }
+    got = [a["code"] for a in alternatives("GB", ds)]
+    assert got[0] == "FR" and "RS" not in got and "RU" not in got and "GB" not in got
+    assert got.index("MA") < got.index("IE") or got.index("FR") < got.index("IE")
+    assert all("distance_km" in a for a in alternatives("GB", ds))
+
+
+def test_easiest_ranks_status_then_stay():
+    ds = {"A1": dec("TH", "visa_free", stay=30), "A2": dec("GE", "visa_free", stay=365), "A3": dec("EG", "visa_on_arrival"), "A4": dec("IN", "evisa"), "A5": dec("US", "visa_required")}
+    ds = {d.code: d for d in ds.values()}
+    assert [d["code"] for d in easiest(ds)] == ["GE", "TH", "EG", "IN"]
+    assert [d["code"] for d in easiest(ds, region="Africa")] == ["EG"]
+
+
+def test_routes():
+    tourist = {"origin": "RU", "residence": None, "purpose": "tourism"}
+    assert [r["key"] for r in routes("FR", tourist, dec("FR", "visa_required"), None)] == ["apply_visa", "schengen_permit"]
+    assert [r["key"] for r in routes("GB", tourist, dec("GB", "visa_required"), None)] == ["apply_visa"]
+    assert [r["key"] for r in routes("TR", tourist, dec("TR", "visa_free", stay=60), None)] == ["visa_free"]
+    assert [r["key"] for r in routes("CA", tourist, dec("CA", "evisa", notes=["eta"]), None)] == ["eta"]
+    # A residence permit in Schengen already opens Schengen: no permit route.
+    assert routes("FR", {**tourist, "residence": "HU"}, dec("FR", "visa_free", "rule"), None)[0]["key"] == "visa_free"
+    student = {**tourist, "purpose": "study"}
+    current = {"status": "current", "visa_type": "D", "processing_days_max": 60}
+    r = routes("HU", student, dec("HU", "unknown", "none"), current)
+    assert r == [{"key": "purpose_visa", "purpose": "study", "verified": True, "visa_type": "D", "processing_days_max": 60}]
+    assert routes("HU", {**tourist, "origin": None}, dec("HU", "unknown", "none"), None) == []

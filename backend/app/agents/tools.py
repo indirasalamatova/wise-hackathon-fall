@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app import explore
 from app.agents import guidelines, journeys, rules
 from app.forms.templates import pdf_spec
 from app.models import CountryGuideline, Document, DocumentAnalysis, Journey, Task, User, utcnow
@@ -117,6 +118,15 @@ class PrefillInput(In):
 
 class NoInput(In):
     pass
+
+
+class DestinationSearch(In):
+    near_code: Optional[str] = Field(default=None, description="ISO alpha-2 of a country the user wanted but may not easily enter; "
+                                     "alternatives are ranked near it. Null for the easiest destinations anywhere.")
+    region: Optional[Literal["Africa", "Americas", "Asia", "Europe", "Oceania"]] = Field(default=None, description="Limit to one region, or null")
+    purpose: Optional[Purpose] = Field(default=None, description="Null for the purpose saved on the user's profile")
+
+    _iso = field_validator("near_code")(classmethod(lambda cls, v: _iso2(v) if v else None))
 
 
 class ProfileInput(In):
@@ -291,6 +301,40 @@ async def prefill_form(session, user: User, inp: PrefillInput, ctx: Context):
     }
 
 
+def _country_name(code: str) -> str:
+    c = explore.pycountry.countries.get(alpha_2=code)
+    return getattr(c, "common_name", None) or (c.name if c else code)
+
+
+async def find_destinations(session, user: User, inp: DestinationSearch, ctx: Context):
+    profile = await explore.travel_profile(session, user, None, None, inp.purpose)
+    if not profile["origin"]:
+        return {"status": "no_passport", "message": "The user's passport country is unknown. Ask which passport they travel on, "
+                                                    "or suggest setting it on the map (/app/explore)."}
+    decisions = await explore.decide_all(session, profile)
+
+    def view(o: dict) -> dict:
+        return {**o, "name": _country_name(o["code"]), "map_url": f"/app/explore?country={o['code']}",
+                "verified": o["basis"] in ("rule", "verified")}
+
+    out: dict[str, Any] = {"status": "ok", "passport": profile["origin"], "residence": profile["residence"], "purpose": profile["purpose"]}
+    if inp.near_code:
+        target = decisions.get(inp.near_code)
+        out["requested"] = view({"code": inp.near_code, "status": target.status if target else "unknown",
+                                 "basis": target.basis if target else "none", "stay_days": target.stay_days if target else None})
+        if target:
+            g_rows = (await session.exec(select(CountryGuideline).where(CountryGuideline.destination_code == inp.near_code))).all()
+            g = explore.pick_guideline(list(g_rows), inp.near_code, profile["origin"], profile["purpose"])
+            out["routes"] = explore.routes(inp.near_code, profile, target, explore.guideline_detail(g) if g else None)
+        out["alternatives"] = [view(o) for o in explore.alternatives(inp.near_code, decisions)]
+    else:
+        out["destinations"] = [view(o) for o in explore.easiest(decisions, inp.region)]
+    out["note"] = ("Ranked visa-free first, then visa on arrival, then eVisa. Entries with verified=false come from the open Passport "
+                   "Index dataset (as of " + explore.visa_matrix.SOURCE["as_of"] + ") and are indicative: say so, and say to confirm "
+                   "with the official source or get_country_guidelines before travelling. Link each country with its map_url.")
+    return _jsonable(out)
+
+
 async def update_my_profile(session, user: User, inp: ProfileInput, ctx: Context):
     changed = {k: v.strip() for k, v in inp.model_dump(exclude_none=True).items() if v and v.strip()}
     for k, v in changed.items():
@@ -339,6 +383,11 @@ TOOLS: dict[str, tuple[type[In], Handler, str, str, tuple[str, ...]]] = {
         "Prefill an application form for a journey from the user's profile, analysed passport and journey dates. "
         "Returns a link and the fields the user still has to complete.",
         "Prefilling the form", ("forms", "journeys")),
+    "find_destinations": (DestinationSearch, find_destinations,
+        "Where the user can go easily on their passport (and residence permit): visa-free first, then visa on arrival, then eVisa. "
+        "With near_code: ways into that country and easier alternatives near it. Use when the user can't easily enter a "
+        "country, asks for options or ideas, or asks where they can travel.",
+        "Finding destinations for you", ()),
     "update_my_profile": (ProfileInput, update_my_profile,
         "Save details the user told you about themselves (citizenship, address, status, studies or occupation).",
         "Saving to your profile", ("profile",)),

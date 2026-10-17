@@ -11,13 +11,20 @@ Precedence, strongest first:
 """
 from __future__ import annotations
 
+import json
+import math
 from dataclasses import asdict, dataclass, field
+from functools import lru_cache
+from pathlib import Path
 from typing import Optional
 
 import pycountry
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.agents import guidelines as guideline_store
-from app.models import CountryGuideline, VisaRequirement
+from app.models import CountryGuideline, DocumentAnalysis, User, VisaRequirement
+from app.services import visa_matrix
 
 STATUSES = ("visa_free", "visa_on_arrival", "evisa", "visa_required", "unknown", "home")
 
@@ -81,6 +88,7 @@ class Decision:
     stay_days: Optional[int] = None
     notes: list[str] = field(default_factory=list)  # note keys, translated by the frontend
     indicative_raw: Optional[str] = None
+    has_guideline: bool = False  # a current Unbound guideline exists for this trip
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -160,8 +168,129 @@ def guideline_detail(g: CountryGuideline) -> dict:
         "processing_days_min": g.processing_days_min,
         "processing_days_max": g.processing_days_max,
         "requirements": [{"title": r["title"], "description": r["description"], "mandatory": r.get("mandatory", True)} for r in g.requirements],
-        "fees": [{"title": f["title"], "amount": f["amount"], "currency": f["currency"]} for f in g.fees],
+        "fees": [{"title": f["title"], "amount": f["amount"], "currency": f["currency"], "mandatory": f.get("mandatory", True), "note": f.get("note")} for f in g.fees],
         "official_links": [{"title": f["title"], "url": f["official_url"]} for f in g.forms if f.get("official_url")],
         "sources": g.sources,
     })
+    return out
+
+
+# ------------------------------------------------------------- travel profile
+
+async def travel_profile(session: AsyncSession, user: User, origin: Optional[str], residence: Optional[str], purpose: Optional[str]) -> dict:
+    """Passport, residence and purpose: the query overrides the profile; an empty profile falls back to the analysed passport."""
+    source = "chosen" if origin else "none"
+    if not origin and user.nationality_code:
+        origin, source = user.nationality_code, "profile"
+    if not origin:
+        analyses = (await session.exec(
+            select(DocumentAnalysis)
+            .where(DocumentAnalysis.user_id == user.id, DocumentAnalysis.status == "done", DocumentAnalysis.document_kind == "passport")
+            .order_by(DocumentAnalysis.analyzed_at.desc())
+        )).all()
+        for a in analyses:
+            if code := alpha2(a.normalized.get("nationality")):
+                origin, source = code, "passport"
+                break
+    if not origin and (code := alpha2(user.citizenship)):
+        origin, source = code, "citizenship"
+    # residence="" in the query means "no residence permit" even if the profile has one.
+    residence = user.residence_code if residence is None else residence
+    return {"origin": origin, "origin_source": source, "residence": residence or None, "purpose": purpose or user.travel_purpose or "tourism"}
+
+
+async def decide_all(session: AsyncSession, profile: dict) -> dict[str, Decision]:
+    """A decision for every country we know of, for one travel profile."""
+    o = profile["origin"]
+    matrix = await visa_matrix.for_origin(session, o) if o else {}
+    rows = (await session.exec(select(CountryGuideline))).all()
+    codes = set(await visa_matrix.passports(session)) | set(matrix) | {g.destination_code for g in rows} | set(geo())
+    out = {}
+    for code in sorted(codes):
+        g = pick_guideline(rows, code, o, profile["purpose"])
+        current = bool(g) and guideline_store.freshness(g)[0] == "current"
+        out[code] = decide(code, o, profile["residence"], profile["purpose"], matrix.get(code), g, current)
+        out[code].has_guideline = current
+    return out
+
+
+# ------------------------------------------------------- alternatives and routes
+
+GEO_FILE = Path(__file__).resolve().parents[1] / "data" / "geo" / "centroids.json"
+
+# How easy each status is to act on; lower is better. Visa-free is always preferred.
+EASE = {"visa_free": 0, "visa_on_arrival": 1, "evisa": 2}
+# A harder status counts as this many extra kilometres when ranking nearby alternatives.
+EASE_PENALTY_KM = 1500
+
+
+@lru_cache(maxsize=1)
+def geo() -> dict[str, dict]:
+    """Region, subregion and a rough centre per country (Natural Earth 1:110m, same as the globe)."""
+    return json.loads(GEO_FILE.read_text()) if GEO_FILE.exists() else {}
+
+
+def distance_km(a: dict, b: dict) -> int:
+    lat1, lng1, lat2, lng2 = map(math.radians, (a["lat"], a["lng"], b["lat"], b["lng"]))
+    h = math.sin((lat2 - lat1) / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin((lng2 - lng1) / 2) ** 2
+    return round(2 * 6371 * math.asin(math.sqrt(h)))
+
+
+def _option(d: Decision, km: Optional[int] = None) -> dict:
+    out = {"code": d.code, "status": d.status, "basis": d.basis, "stay_days": d.stay_days}
+    if km is not None:
+        out["distance_km"] = km
+    return out
+
+
+def alternatives(target: str, decisions: dict[str, Decision], limit: int = 6) -> list[dict]:
+    """
+    Easier destinations near `target`: visa-free first, then visa on arrival, then eVisa, nearer
+    first. Home countries are left out (the user is there already).
+    """
+    places = geo()
+    here = places.get(target)
+    if not here:
+        return []
+    scored = []
+    for code, d in decisions.items():
+        if code == target or d.status not in EASE or code not in places:
+            continue
+        km = distance_km(here, places[code])
+        scored.append((km + EASE[d.status] * EASE_PENALTY_KM, EASE[d.status], km, code))
+    return [_option(decisions[c], km) for _, _, km, c in sorted(scored)[:limit]]
+
+
+def easiest(decisions: dict[str, Decision], region: Optional[str] = None, limit: int = 12) -> list[dict]:
+    """Where the user can go most easily: visa-free first, longer permitted stays first."""
+    places = geo()
+    pick = [d for d in decisions.values() if d.status in EASE and (not region or places.get(d.code, {}).get("region") == region)]
+    pick.sort(key=lambda d: (EASE[d.status], -(d.stay_days or 0), d.code))
+    return [_option(d) for d in pick[:limit]]
+
+
+def routes(target: str, profile: dict, d: Decision, guideline: Optional[dict]) -> list[dict]:
+    """
+    Ways in for this traveller, most direct first. Keys are translated by the frontend
+    (explore.route.<key>); `verified` says whether a current guideline backs the details.
+    """
+    current = guideline if guideline and guideline.get("status") == "current" else None
+    origin, residence, purpose = profile["origin"], profile["residence"], profile["purpose"]
+    out: list[dict] = []
+    if not origin or d.status == "home":
+        return out
+    if d.status == "visa_free":
+        out.append({"key": "visa_free", "stay_days": d.stay_days, "verified": d.basis in ("rule", "verified")})
+    elif d.status == "visa_on_arrival":
+        out.append({"key": "on_arrival", "stay_days": d.stay_days, "verified": d.basis == "verified"})
+    elif d.status == "evisa":
+        out.append({"key": "eta" if "eta" in d.notes else "evisa", "stay_days": d.stay_days, "verified": d.basis == "verified"})
+    if purpose != "tourism" and d.basis not in ("home", "rule"):
+        out.append({"key": "purpose_visa", "purpose": purpose, "verified": bool(current),
+                    "visa_type": current and current["visa_type"], "processing_days_max": current and current.get("processing_days_max")})
+    elif d.status in ("visa_required", "unknown"):
+        out.append({"key": "apply_visa", "verified": bool(current),
+                    "visa_type": current and current["visa_type"], "processing_days_max": current and current.get("processing_days_max")})
+    if purpose == "tourism" and target in SCHENGEN and residence not in SCHENGEN and d.status not in ("visa_free",):
+        out.append({"key": "schengen_permit", "verified": True})
     return out

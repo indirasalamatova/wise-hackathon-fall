@@ -8,7 +8,7 @@ import { Card, CardTitle, Field, PageHeader, Segmented } from '@/components/ui/p
 import { useI18n } from '@/i18n'
 import * as api from '@/lib/api'
 import { cn } from '@/lib/format'
-import { travelPurposes, visaStatuses, type TravelPurpose, type VisaMap, type VisaStatus } from '@/lib/types'
+import { travelPurposes, visaStatuses, type TravelPurpose, type VisaAlternative, type VisaMap, type VisaStatus } from '@/lib/types'
 import { useAuth, useToast } from '@/store/context'
 
 const GlobeView = lazy(() => import('@/components/explore/GlobeView'))
@@ -63,7 +63,9 @@ export function ExplorePage() {
   const [focus, setFocus] = useState<{ lat: number; lng: number; altitude: number }>()
   const [saving, setSaving] = useState(false)
   const [openPanel, setOpenPanel] = useState<'filters' | 'destinations' | null>(null)
-  const [listTab, setListTab] = useState<'all' | 'saved'>('all')
+  const [listTab, setListTab] = useState<'easy' | 'all' | 'saved'>('easy')
+  // Alternatives to the open country, for the globe arcs; tagged with the country they belong to.
+  const [alts, setAlts] = useState<{ for: string; list: VisaAlternative[] } | null>(null)
 
   const queryKey = JSON.stringify(query)
   useEffect(() => {
@@ -110,6 +112,26 @@ export function ExplorePage() {
       .filter((c) => (q ? country(c).toLocaleLowerCase(locale).includes(q) || c.toLowerCase() === q : visible(c)))
       .sort((a, b) => collator.compare(country(a), country(b)))
   }, [allCodes, search, visible, country, collator, locale])
+
+  // Visa-free first, then on arrival, then eVisa; longer stays first. Mirrors explore.easiest on the server.
+  const easiest = useMemo(() => {
+    const ease: Partial<Record<VisaStatus, number>> = { visa_free: 0, visa_on_arrival: 1, evisa: 2 }
+    return (data?.countries ?? [])
+      .filter((c) => ease[c.status] != null && (region === 'all' || regionOf(c.code) === region) && featureOf.has(c.code))
+      .sort((a, b) => ease[a.status]! - ease[b.status]! || (b.stayDays ?? 0) - (a.stayDays ?? 0) || collator.compare(country(a.code), country(b.code)))
+  }, [data, region, regionOf, featureOf, collator, country])
+
+  const shownAlts = useMemo(() => (alts && alts.for === selected ? alts.list : []), [alts, selected])
+  const highlighted = useMemo(() => new Set(shownAlts.map((a) => a.code)), [shownAlts])
+  const arcs = useMemo(() => {
+    const from = selected && featureOf.get(selected)
+    if (!from) return []
+    const start = centreOf(from)
+    return shownAlts.flatMap((a) => {
+      const f = featureOf.get(a.code)
+      return f ? [{ from: start, to: centreOf(f), color: statusColor[a.status] }] : []
+    })
+  }, [shownAlts, selected, featureOf])
 
   const select = (code: string | undefined) => {
     setParams((p) => {
@@ -192,6 +214,8 @@ export function ExplorePage() {
                       dimmed={(c) => !visible(c)}
                       labelOf={(c) => [country(c), t(`explore.status.${statusOf(c)}`)]}
                       selected={selected}
+                      highlighted={highlighted}
+                      arcs={arcs}
                       focus={focus}
                       onSelect={select}
                     />
@@ -227,6 +251,8 @@ export function ExplorePage() {
                   favorite={favorites.includes(selected)}
                   onToggleFavorite={() => toggleFavorite(selected)}
                   onClose={() => select(undefined)}
+                  onSelectCountry={select}
+                  onLoaded={(d) => setAlts({ for: d.decision.code, list: d.alternatives })}
                 />
               </div>
             )}
@@ -335,11 +361,36 @@ export function ExplorePage() {
               value={listTab}
               onChange={setListTab}
               options={[
+                { value: 'easy', label: t('explore.easiestTab') },
                 { value: 'all', label: t('explore.matching', { count: matching.length }) },
                 { value: 'saved', label: t('explore.savedCount', { count: favorites.length }) },
               ]}
             />
-            {listTab === 'all' ? (
+            {listTab === 'easy' ? (
+              <>
+                <p className="mt-3 text-xs text-muted">{t('explore.easiestHint')}</p>
+                {easiest.length === 0 ? (
+                  <p className="mt-2 text-sm text-muted">{data?.origin ? t('explore.easiestNone') : t('explore.note.no_passport')}</p>
+                ) : (
+                  <ol className="mt-2 max-h-56 overflow-y-auto">
+                    {easiest.map((c, i) => (
+                      <li key={c.code}>
+                        <button
+                          type="button"
+                          onClick={() => select(c.code)}
+                          className={cn('flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-blush', c.code === selected && 'bg-rose-100 font-semibold')}
+                        >
+                          <span className="w-5 shrink-0 text-right text-xs text-muted">{i + 1}</span>
+                          <span className="size-2.5 shrink-0 rounded-full ring-1 ring-black/10" style={{ background: statusColor[c.status] }} aria-hidden />
+                          <span className="flex-1 truncate">{country(c.code)}</span>
+                          <span className="shrink-0 text-xs text-muted">{c.stayDays ? t('explore.stayDays', { count: c.stayDays }) : t(`explore.status.${c.status}`)}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </>
+            ) : listTab === 'all' ? (
               <>
                 <label htmlFor="ex-search" className="sr-only">
                   {t('explore.search')}
