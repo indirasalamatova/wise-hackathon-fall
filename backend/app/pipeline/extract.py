@@ -99,8 +99,19 @@ async def extract(target: Target, pages: list[Page]) -> tuple[Optional[dict], Op
     """Returns (extracted dict, error, model used)."""
     from google.genai import errors as gerrors, types
 
+    if llm.provider() == "local":
+        # Same schema, enforced by the server; verify.py still checks every quote and number.
+        try:
+            parsed = await llm.local_json([{"role": "system", "content": SYSTEM}, {"role": "user", "content": _prompt(target, pages)}],
+                                          ExtractedGuideline)
+        except llm.LocalError as e:
+            log.warning("extraction for %s failed: %s %s", target.key, e.status, e.message[:300])
+            return None, f"{llm.describe_error(e)} ({e.message[:200]})", llm.LOCAL_LLM_MODEL
+        except ValueError as e:
+            return None, f"extraction returned no structured result ({str(e)[:200]})", llm.LOCAL_LLM_MODEL
+        return parsed.model_dump(), None, llm.LOCAL_LLM_MODEL
     if llm.provider() != "gemini":
-        return None, "The pipeline runs on Gemini (set GEMINI_API_KEY).", None
+        return None, "The pipeline runs on Gemini or a local model (LLM_PROVIDER=local).", None
     try:
         response, model = await llm.gemini_generate(
             _prompt(target, pages),

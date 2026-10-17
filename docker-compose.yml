@@ -49,6 +49,8 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
+    extra_hosts: &host-gateway
+      - "host.docker.internal:host-gateway"  # a local model server (LM Studio) on this machine
     environment: &backend-env
       DATABASE_URL: postgresql+asyncpg://unbound_user:unbound_password@postgres:5432/unbound_db
       S3_ENDPOINT_URL: http://storage:9000
@@ -61,12 +63,15 @@ services:
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
       ADMIN_EMAILS: ${ADMIN_EMAILS:-}
       # AI agents (chat + document analysis). Without a key the rest of the app still works.
-      # LLM_PROVIDER: gemini or anthropic; unset = gemini when GEMINI_API_KEY is set.
+      # LLM_PROVIDER: gemini, anthropic or local (LM Studio etc.); unset = gemini when GEMINI_API_KEY is set.
       LLM_PROVIDER: ${LLM_PROVIDER:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
       GEMINI_FALLBACK_MODELS: ${GEMINI_FALLBACK_MODELS:-gemini-3-flash-preview,gemini-flash-latest}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LOCAL_LLM_URL: ${LOCAL_LLM_URL:-http://host.docker.internal:1234/v1}
+      LOCAL_LLM_MODEL: ${LOCAL_LLM_MODEL:-qwen3-4b-instruct-2507}
+      LOCAL_LLM_API_KEY: ${LOCAL_LLM_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-5-5}
       AGENT_EFFORT: ${AGENT_EFFORT:-high}
       # Manual guidelines verified longer ago than this are out of date; pipeline ones after PIPELINE_MAX_AGE_DAYS.
@@ -91,6 +96,7 @@ services:
     command: ["python", "-m", "app.worker"]
     volumes:
       - ./backend:/app
+    extra_hosts: *host-gateway
     environment: *backend-env
     depends_on:
       postgres:

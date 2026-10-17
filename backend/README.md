@@ -1,6 +1,6 @@
 # Unbound backend
 
-FastAPI + SQLModel (Postgres) + RustFS (S3) + Google Gemini or Anthropic Claude.
+FastAPI + SQLModel (Postgres) + RustFS (S3) + Google Gemini, Anthropic Claude or a local model (LM Studio).
 See the [root README](../README.md) for running and deploying.
 
 ```bash
@@ -13,20 +13,41 @@ isn't configured. Optional: `GUIDELINE_MAX_AGE_DAYS` (default `90`).
 
 ### AI provider
 
-| | Gemini | Claude |
-| --- | --- | --- |
-| Key | `GEMINI_API_KEY` ([AI Studio](https://aistudio.google.com/apikey)) | `ANTHROPIC_API_KEY` |
-| Model | `GEMINI_MODEL` (default `gemini-3.5-flash`) | `ANTHROPIC_MODEL` (default `claude-opus-5-5`), `AGENT_EFFORT` (default `high`) |
+| | Gemini | Claude | Local (`LLM_PROVIDER=local`) |
+| --- | --- | --- | --- |
+| Key | `GEMINI_API_KEY` ([AI Studio](https://aistudio.google.com/apikey)) | `ANTHROPIC_API_KEY` | none (`LOCAL_LLM_API_KEY` if the server needs one) |
+| Model | `GEMINI_MODEL` (default `gemini-3.5-flash`) | `ANTHROPIC_MODEL` (default `claude-opus-5-5`), `AGENT_EFFORT` (default `high`) | `LOCAL_LLM_MODEL` (default `qwen3-4b-instruct-2507`) at `LOCAL_LLM_URL` (default `http://host.docker.internal:1234/v1`) |
 
 List the Gemini models your key can use (the current one is starred):
 `docker exec unbound_backend python -m app.cli.list_models`. Not every listed model works on every
 key: previews may have no free quota (429), and some need the API enabled in the key's Google Cloud
 project (403).
 
-`LLM_PROVIDER=gemini|anthropic` picks one; unset, Gemini is used when `GEMINI_API_KEY` is set. After
+`LLM_PROVIDER=gemini|anthropic|local` picks one; unset, Gemini is used when `GEMINI_API_KEY` is set. After
 changing `.env`, recreate the container: `docker compose up -d backend`. Conversations remember the
 provider they started with (message formats differ); switching providers means starting a new
 conversation. Tools, rules, the guideline gate and the UI are the same for both.
+
+**Local model (LM Studio).** Any OpenAI-compatible server works; nothing leaves the machine. Load
+the model in LM Studio, then start its server where the containers can reach it (the Docker bridge
+address, not your network):
+
+```bash
+~/.lmstudio/bin/lms server start --port 1234 --bind 172.17.0.1
+```
+
+The containers reach it as `host.docker.internal` (mapped in both compose files for local use).
+- **Chat**: tool calling through the same tools; the history is stored in OpenAI message format.
+  Malformed tool arguments are answered with an error instead of being run.
+- **Documents**: PDFs with a text layer are read as text, and the MRZ is taken from that text by
+  code (small models garble long strings), then checked as usual. Photos and scans need a vision
+  model (`LOCAL_LLM_MODEL` set to one); with a text-only model the user is told to upload a text PDF.
+- **Pipeline**: extraction uses the local model with the same schema; `verify.py` still drops
+  anything whose quote isn't on the page. Web discovery needs Gemini (Google Search) and is skipped.
+
+A 4B model follows tools and schemas but is weaker at judgement (it may answer from general
+knowledge instead of calling a tool). Facts that matter still come only from tools and verified
+guidelines.
 
 **Free-tier data:** on Gemini's free tier Google may use what you send, including document scans, to
 improve its products. Use a paid Gemini key (or Claude) before real users upload documents.
@@ -172,6 +193,7 @@ docker exec -w /app unbound_backend python -m pytest -q tests/
 
 - `test_rules.py`: dates, MRZ, fees, requirement checks, form fill.
 - `test_explore.py`: explore map eligibility precedence, country-code parsing, the bundled visa matrix.
+- `test_local_documents.py`: the MRZ read from a PDF's text layer.
 - `test_forms_pdf.py`: values land next to their labels, missing labels and tight gaps are skipped,
   every form placement refers to a real field, the data sheet renders Unicode.
 - `test_verify.py`: quote matching, amounts and currencies, dropping unproven facts, publish rules.

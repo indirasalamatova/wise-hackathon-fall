@@ -1,6 +1,6 @@
 """
-Document agent: reads an uploaded file with Claude, then hands the raw values to
-the deterministic rules for normalisation and checks.
+Document agent: reads an uploaded file with the configured model, then hands the raw
+values to the deterministic rules for normalisation and checks.
 
 The model has no tools here and its output is a fixed schema, so text inside a
 document can't make it do anything else. It reports values exactly as printed;
@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import re
 from datetime import date
 from typing import Optional
 
@@ -75,9 +76,87 @@ def _prompt(title: str, category: str) -> str:
 
 async def extract(data: bytes, content_type: str, title: str, category: str) -> tuple[Extraction | None, str | None]:
     """Returns (extraction, error), using the configured provider."""
-    if llm.provider() == "gemini":
+    p = llm.provider()
+    if p == "gemini":
         return await _extract_gemini(data, content_type, title, category)
+    if p == "local":
+        return await _extract_local(data, content_type, title, category)
     return await _extract_anthropic(data, content_type, title, category)
+
+
+MIN_TEXT_CHARS = 40  # less than this on every page: a scan, read as images
+MAX_PDF_PAGES = 5
+
+
+def _pdf_text_or_images(data: bytes) -> tuple[str, list[bytes]]:
+    """A PDF's text layer, or its first pages as PNGs if it has none (a scan)."""
+    import io
+
+    import pdfplumber
+
+    with pdfplumber.open(io.BytesIO(data)) as pdf:
+        pages = pdf.pages[:MAX_PDF_PAGES]
+        text = "\n\n".join(f"--- page {i} ---\n{p.extract_text() or ''}" for i, p in enumerate(pages, start=1))
+        if sum(len((p.extract_text() or "").strip()) for p in pages) >= MIN_TEXT_CHARS:
+            return text, []
+        images = []
+        for p in pages:
+            buf = io.BytesIO()
+            p.to_image(resolution=150).original.save(buf, format="PNG")
+            images.append(buf.getvalue())
+        return "", images
+
+
+_MRZ_LINE = re.compile(r"^[A-Z0-9<]{30,44}$")
+
+
+def _mrz_from_text(text: str) -> Optional[Mrz]:
+    """The MRZ copied from a PDF's text layer: two consecutive 44- (passport) or 36-character lines."""
+    lines = [ln.replace(" ", "") for ln in text.splitlines()]
+    for a, b in zip(lines, lines[1:]):
+        if _MRZ_LINE.match(a) and _MRZ_LINE.match(b) and len(a) == len(b) in (44, 36) and a[0] in "PIACV":
+            return Mrz(line1=a, line2=b)
+    return None
+
+
+async def _extract_local(data: bytes, content_type: str, title: str, category: str) -> tuple[Extraction | None, str | None]:
+    """Text PDFs go in as text (any model); images and scans need a vision model loaded."""
+    from pydantic import ValidationError
+
+    images: list[tuple[bytes, str]] = []
+    if content_type == "application/pdf":
+        try:
+            text, pngs = _pdf_text_or_images(data)
+        except Exception as e:
+            log.warning("couldn't read PDF: %s", e)
+            return None, "The PDF couldn’t be opened."
+        images = [(png, "image/png") for png in pngs]
+    else:
+        text, images = "", [(data, content_type)]
+
+    prompt = _prompt(title, category)
+    if text:
+        content: str | list = f"{prompt}\nIts text, extracted from the PDF (layout may be lost):\n<document>\n{text}\n</document>"
+    else:
+        content = [{"type": "text", "text": prompt}] + [
+            {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{base64.standard_b64encode(img).decode('ascii')}"}}
+            for img, mime in images
+        ]
+    try:
+        parsed = await llm.local_json([{"role": "system", "content": SYSTEM}, {"role": "user", "content": content}], Extraction)
+    except llm.LocalError as e:
+        log.warning("local document analysis failed: %s %s", e.status, e.message[:300])
+        if images and e.status and 400 <= e.status < 500:
+            return None, ("The local AI model can’t read images. Upload a PDF with selectable text, "
+                          "or load a vision model in LM Studio and set LOCAL_LLM_MODEL to it.")
+        return None, llm.describe_error(e)
+    except (ValidationError, ValueError):
+        return None, "The analysis didn’t return a result. Try again."
+    # Small models garble long strings; the text layer has the MRZ exactly, and rules.py checks its digits.
+    mrz = _mrz_from_text(text) if text else None
+    if mrz:
+        parsed.mrz = mrz  # type: ignore[attr-defined]
+    return parsed, None  # type: ignore[return-value]
 
 
 async def _extract_gemini(data: bytes, content_type: str, title: str, category: str) -> tuple[Extraction | None, str | None]:

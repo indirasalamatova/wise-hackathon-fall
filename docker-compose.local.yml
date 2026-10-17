@@ -4,9 +4,11 @@ services:
   backend:
     environment:
       CORS_ORIGINS: http://localhost:8080
+    extra_hosts: ["host.docker.internal:host-gateway"]  # a local model server (LM Studio) on this machine
   worker:
     environment:
       CORS_ORIGINS: http://localhost:8080
+    extra_hosts: ["host.docker.internal:host-gateway"]
   frontend:
     # nginx serves the built app and proxies /api, as in production.
     ports:

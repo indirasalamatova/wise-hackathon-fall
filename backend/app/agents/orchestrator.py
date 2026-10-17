@@ -264,6 +264,88 @@ async def _loop_gemini(t: _Turn) -> AsyncIterator[dict]:
     yield {"type": "error", "message": "That took too many steps. Try asking in smaller parts."}
 
 
+def _local_tools() -> list[dict]:
+    return [{"type": "function", "function": {"name": d["name"], "description": d["description"], "parameters": d["input_schema"]}}
+            for d in tools.definitions()]
+
+
+def _local_messages(messages: list[dict]) -> list[dict]:
+    # Each stored row holds the OpenAI-format messages of that step, replayed as received.
+    return [{"role": "system", "content": SYSTEM}] + [msg for m in messages for msg in m["content"]]
+
+
+def _tool_message(call: dict, result: dict, is_error: bool) -> dict:
+    return {"role": "tool", "tool_call_id": call["id"], "content": json.dumps({"error": result} if is_error else result, default=str)}
+
+
+async def _loop_local(t: _Turn) -> AsyncIterator[dict]:
+    tool_defs = _local_tools()
+    for _ in range(MAX_STEPS):
+        text_parts: list[str] = []
+        calls: dict[int, dict] = {}
+        finish = None
+        try:
+            async for choice in llm.local_stream(_local_messages(t.messages), tools=tool_defs, temperature=0.3):
+                delta = choice.get("delta") or {}
+                if delta.get("content"):
+                    text_parts.append(delta["content"])
+                    yield {"type": "text", "text": delta["content"]}
+                for tc in delta.get("tool_calls") or []:
+                    c = calls.setdefault(tc.get("index", len(calls)), {"id": None, "name": "", "arguments": ""})
+                    fn = tc.get("function") or {}
+                    c["id"] = c["id"] or tc.get("id")
+                    c["name"] += fn.get("name") or ""
+                    c["arguments"] += fn.get("arguments") or ""
+                finish = choice.get("finish_reason") or finish
+        except llm.LocalError as e:
+            log.warning("local chat request failed: %s %s", e.status, e.message[:300])
+            yield {"type": "error", "message": llm.describe_error(e)}
+            return
+
+        reply_text = "".join(text_parts) or None
+        ordered = [calls[i] for i in sorted(calls)]
+        for i, c in enumerate(ordered):
+            c["id"] = c["id"] or f"call_{i}"
+        message: dict = {"role": "assistant", "content": reply_text}
+        if ordered:
+            message["tool_calls"] = [{"id": c["id"], "type": "function", "function": {"name": c["name"], "arguments": c["arguments"]}} for c in ordered]
+
+        if finish == "length" and ordered:
+            await _append(t.session, t.chat_id, "assistant", [message], display_text=reply_text)
+            await _append(t.session, t.chat_id, "user", [_tool_message(c, {"message": CUT_OFF}, True) for c in ordered])
+            yield {"type": "error", "message": "The answer was cut off. Ask again, or in smaller parts."}
+            return
+        if not ordered:
+            if reply_text:
+                await _append(t.session, t.chat_id, "assistant", [message], display_text=reply_text)
+            return
+
+        # Small models sometimes emit malformed arguments: answer those with an error instead of running them.
+        parsed: list = []
+        for c in ordered:
+            try:
+                args = json.loads(c["arguments"] or "{}")
+                parsed.append(args if isinstance(args, dict) else None)
+            except ValueError:
+                parsed.append(None)
+        events: list[dict] = []
+        outcomes: list = []
+        async for e in t.run_tools([(c["name"], a) for c, a in zip(ordered, parsed) if a is not None], events, outcomes):
+            yield e
+        ran = iter(outcomes)
+        results = [
+            _tool_message(c, *next(ran)) if a is not None else _tool_message(c, {"message": "The arguments weren’t valid JSON."}, True)
+            for c, a in zip(ordered, parsed)
+        ]
+        await _append(t.session, t.chat_id, "assistant", [message], display_text=reply_text, events=events)
+        await _append(t.session, t.chat_id, "user", results)
+        t.messages += [{"role": "assistant", "content": [message]}, {"role": "user", "content": results}]
+    yield {"type": "error", "message": "That took too many steps. Try asking in smaller parts."}
+
+
+_LOOPS = {"gemini": _loop_gemini, "anthropic": _loop_anthropic, "local": _loop_local}
+
+
 async def run_turn(user_id: str, chat_id: str, text: str) -> AsyncIterator[dict]:
     async with async_session_maker() as session:
         user = await session.get(User, user_id)
@@ -274,7 +356,7 @@ async def run_turn(user_id: str, chat_id: str, text: str) -> AsyncIterator[dict]
 
         provider = llm.provider()
         try:
-            llm.gemini() if provider == "gemini" else llm.client()
+            llm.check_configured()
         except llm.NotConfigured as e:
             yield {"type": "error", "message": str(e)}
             return
@@ -297,13 +379,15 @@ async def run_turn(user_id: str, chat_id: str, text: str) -> AsyncIterator[dict]
         context += "</context>"
         if provider == "gemini":
             user_content = [{"text": context}, {"text": text}]
+        elif provider == "local":
+            user_content = [{"role": "user", "content": f"{context}\n\n{text}"}]
         else:
             user_content = [{"type": "text", "text": context}, {"type": "text", "text": text}]
         await _append(session, chat_id, "user", user_content, display_text=text)
         messages.append({"role": "user", "content": user_content})
 
         turn = _Turn(session, user, chat_id, messages, chat.journey_id)
-        async for event in (_loop_gemini(turn) if provider == "gemini" else _loop_anthropic(turn)):
+        async for event in _LOOPS[provider](turn):
             yield event
 
         chat.updated_at = utcnow()

@@ -79,7 +79,7 @@ keep it from spending AI quota on the daily pipeline.
 
 Caddy gets HTTPS certificates automatically; only ports 80 and 443 are exposed. The worker runs the guidelines pipeline daily at `PIPELINE_HOUR_UTC` (default 03:00 UTC).
 
-**AI quota:** a daily pipeline run plus chat needs a paid Gemini key (the free tier allows about 20 requests per model per day) or an Anthropic key with credits.
+**AI quota:** a daily pipeline run plus chat needs a paid Gemini key (the free tier allows about 20 requests per model per day), an Anthropic key with credits, or a local model in LM Studio (`LLM_PROVIDER=local`, see [backend/README.md](backend/README.md)).
 
 ## Tests
 
