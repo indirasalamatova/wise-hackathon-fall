@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { Clock, FileText, Send, Wallet } from 'lucide-react'
 import { Segmented } from '@/components/ui/primitives'
 import { useCase } from '@/store/context'
@@ -15,6 +15,7 @@ const kindStyle: Record<NotificationKind, { icon: typeof Clock; cls: string }> =
 
 export function NotificationsPanel({ onClose }: { onClose: () => void }) {
   const { notifications, markAllRead, markRead } = useCase()
+  const navigate = useNavigate()
   const [filter, setFilter] = useState<'all' | 'unread'>('all')
   const unread = notifications.filter((n) => n.unread).length
   const list = filter === 'all' ? notifications : notifications.filter((n) => n.unread)
@@ -55,7 +56,13 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
             <li key={n.id}>
               <button
                 type="button"
-                onClick={() => markRead(n.id)}
+                onClick={() => {
+                  markRead(n.id)
+                  if (n.href) {
+                    navigate(n.href)
+                    onClose()
+                  }
+                }}
                 className="flex w-full items-start gap-3.5 rounded-xl px-3 py-3 text-left hover:bg-blush"
               >
                 <span className={cn('grid size-12 shrink-0 place-items-center rounded-xl', cls)}>

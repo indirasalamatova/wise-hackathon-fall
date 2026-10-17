@@ -7,11 +7,13 @@ import type { CaseDocument } from '@/lib/types'
 import { PayDialog, RequestDialog, UploadDialog } from './DocumentDialogs'
 
 const actionLabel = { request: 'Request', upload: 'Upload', pay: 'Pay with Wise' } as const
-const FEE_EUR = 47
+const RENEWAL_FEE = 'Permit renewal fee'
+const RENEWAL_FEE_FALLBACK_EUR = 47
 
 /** Document rows with their actions wired to the request / upload / pay flows. */
 export function DocumentList({ documents, showReady = true }: { documents: CaseDocument[]; showReady?: boolean }) {
-  const { updateDocument } = useCase()
+  const { payDocument, payments } = useCase()
+  const fee = payments.find((p) => p.what === RENEWAL_FEE)?.amount ?? RENEWAL_FEE_FALLBACK_EUR
   const [upload, setUpload] = useState<CaseDocument | null>(null)
   const [request, setRequest] = useState<CaseDocument | null>(null)
   const [pay, setPay] = useState<CaseDocument | null>(null)
@@ -56,12 +58,10 @@ export function DocumentList({ documents, showReady = true }: { documents: CaseD
       <RequestDialog doc={request} onClose={() => setRequest(null)} />
       <PayDialog
         open={!!pay}
-        amount={FEE_EUR}
+        amount={fee}
         what="Residence permit renewal fee · HUF 18,000"
         onClose={() => setPay(null)}
-        onPaid={(ref) =>
-          pay && updateDocument(pay.id, { status: 'ready', fileName: `wise-receipt-${ref}.pdf`, action: undefined })
-        }
+        onPay={() => (pay ? payDocument(pay.id) : Promise.resolve())}
       />
     </>
   )

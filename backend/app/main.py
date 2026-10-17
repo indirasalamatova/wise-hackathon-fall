@@ -1,9 +1,12 @@
+import asyncio
 import os
+import re
 import uuid
 from contextlib import asynccontextmanager
+from datetime import date
 from typing import List, Optional
 
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -11,12 +14,14 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.database import init_db, get_session, async_session_maker
 from app.models import UserProfile, Task, CaseDocument, Payment, AppNotification
 from app.schemas import (
-    TaskCreate, TaskUpdate, DocumentUpdate, BudgetUpdate, SettingsUpdate,
-    ChatRequest, ChatResponse, ChatBlock
+    TaskCreate, TaskUpdate, DocumentUpdate, BudgetUpdate, SettingsUpdate, ProfileUpdate,
+    ChatRequest, ChatResponse, ChatBlock, DocumentCheck, DocumentUploadResponse, VisaFeePayment
 )
 from app.seed import seed_data
 from app.services.storage import StorageService
-from app.services.worker import BackgroundWorkerService
+
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+ACCEPTED_UPLOAD_TYPES = {"application/pdf", "image/jpeg", "image/png"}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -48,6 +53,26 @@ async def get_profile(session: AsyncSession = Depends(get_session)):
     profile = await session.get(UserProfile, "user_default")
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
+    return profile
+
+@app.patch("/api/profile", response_model=UserProfile)
+async def update_profile(payload: ProfileUpdate, session: AsyncSession = Depends(get_session)):
+    profile = await session.get(UserProfile, "user_default")
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    if payload.full_name is not None:
+        full_name = payload.full_name.strip()
+        if not full_name:
+            raise HTTPException(status_code=422, detail="Add your name as it appears in your passport.")
+        parts = full_name.split()
+        profile.full_name = full_name
+        profile.first_name = parts[0]
+        profile.initials = "".join(p[0] for p in parts[:2]).upper()
+    if payload.address is not None:
+        profile.address = payload.address.strip()
+    session.add(profile)
+    await session.commit()
+    await session.refresh(profile)
     return profile
 
 @app.patch("/api/profile/budget", response_model=UserProfile)
@@ -139,27 +164,40 @@ async def update_document(doc_id: str, payload: DocumentUpdate, session: AsyncSe
     await session.refresh(doc)
     return doc
 
-@app.post("/api/documents/{doc_id}/upload", response_model=CaseDocument)
+@app.post("/api/documents/{doc_id}/upload", response_model=DocumentUploadResponse)
 async def upload_document(
-    doc_id: str, 
-    background_tasks: BackgroundTasks,
-    file: UploadFile = File(...), 
+    doc_id: str,
+    file: UploadFile = File(...),
     session: AsyncSession = Depends(get_session)
 ):
     doc = await session.get(CaseDocument, doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    
-    file_path = await StorageService.save_upload(file, doc_id)
-    doc.file_path = file_path
-    doc.status = "ready"
-    doc.action = None
+    if file.content_type not in ACCEPTED_UPLOAD_TYPES:
+        raise HTTPException(status_code=415, detail="Upload a PDF, JPG or PNG file.")
+    if file.size is not None and file.size > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="This file is over 10 MB. Compress it or upload a single page.")
+
+    doc.file_path = await StorageService.save_upload(file, doc_id)
+
+    # Simulated AI check. A file named with "old" or "expired" fails the
+    # validity check so the rejected path can be demoed.
+    await asyncio.sleep(1.5)
+    stale = bool(re.search(r"old|expired", file.filename or "", re.IGNORECASE))
+    checks = [
+        DocumentCheck(label="Name matches passport", ok=True, detail="Aigerim Nurlanovna"),
+        DocumentCheck(label=f"Recognised as {doc.title.lower()}", ok=True, detail="All pages present, text is sharp"),
+        DocumentCheck(label="Valid for your new permit", ok=False, detail="Ends before 31 Jan 2027. Upload a policy that covers the full permit period.")
+        if stale
+        else DocumentCheck(label="Valid for your new permit", ok=True, detail="Covers the full permit period"),
+        DocumentCheck(label="Accepted format", ok=True, detail="PDF" if file.content_type == "application/pdf" else "Image"),
+    ]
+    doc.status = "rejected" if stale else "ready"
+    doc.action = "upload" if stale else None
     session.add(doc)
     await session.commit()
     await session.refresh(doc)
-
-    background_tasks.add_task(BackgroundWorkerService.process_document_verification, doc_id, session)
-    return doc
+    return DocumentUploadResponse(document=doc, checks=checks)
 
 @app.post("/api/documents/{doc_id}/pay", response_model=CaseDocument)
 async def pay_document_fee(doc_id: str, session: AsyncSession = Depends(get_session)):
@@ -193,12 +231,15 @@ async def list_payments(status: Optional[str] = None, session: AsyncSession = De
     return result.all()
 
 @app.post("/api/payments/pay-visa-fee", response_model=Payment)
-async def pay_visa_fee(title: str = "Germany · Opportunity Card Fee", amount: int = 75, session: AsyncSession = Depends(get_session)):
+async def pay_visa_fee(payload: VisaFeePayment, session: AsyncSession = Depends(get_session)):
+    if payload.amount_eur <= 0:
+        raise HTTPException(status_code=422, detail="Choose at least one official fee to pay.")
+    today = date.fromisoformat(os.getenv("MOCK_TODAY", date.today().isoformat()))
     payment = Payment(
         id=f"pay-{uuid.uuid4().hex[:8]}",
-        date_str="Today",
-        title=title,
-        amount_eur=amount,
+        date_str=f"{today.day} {today.strftime('%b %Y')}",
+        title=payload.title,
+        amount_eur=payload.amount_eur,
         status="paid"
     )
     session.add(payment)

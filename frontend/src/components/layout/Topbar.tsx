@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Bell, ChevronDown, Menu, Search } from 'lucide-react'
 import { Flag } from '@/components/brand/Flag'
-import { useCase } from '@/store/context'
+import { useAuth, useCase } from '@/store/context'
 import { destinations } from '@/lib/mock-data'
 import { cn } from '@/lib/format'
 import type { CountryCode, Settings } from '@/lib/types'
@@ -93,7 +93,8 @@ function GlobalSearch() {
 }
 
 export function Topbar({ onMenu }: { onMenu: () => void }) {
-  const { notifications, settings, setSetting } = useCase()
+  const { notifications } = useCase()
+  const { settings, setSetting } = useAuth()
   const [panel, setPanel] = useState<'none' | 'notifications' | 'lang'>('none')
   const right = useRef<HTMLDivElement>(null)
   useClickAway(right, () => setPanel('none'), panel !== 'none')

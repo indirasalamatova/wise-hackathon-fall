@@ -2,25 +2,23 @@ import { useRef, useState } from 'react'
 import { Check, CircleAlert, FileUp, Loader2, X } from 'lucide-react'
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/Button'
-import * as api from '@/lib/api'
+import { MAX_UPLOAD_MB } from '@/lib/api'
 import { cn, money } from '@/lib/format'
-import { wise } from '@/lib/mock-data'
-import type { CaseDocument, DocCheck } from '@/lib/types'
-import { useCase, useToast } from '@/store/context'
+import type { CaseDocument, CheckPhase, DocCheck } from '@/lib/types'
+import { useAuth, useCase, useToast } from '@/store/context'
 
 /* --------------------------------------------------------------- Upload */
 
-const phases: { key: api.CheckPhase; label: string }[] = [
+const phases: { key: CheckPhase; label: string }[] = [
   { key: 'uploading', label: 'Uploading securely' },
-  { key: 'reading', label: 'Reading the document' },
   { key: 'checking', label: 'Checking names, dates and format against your case' },
 ]
 
 export function UploadDialog({ doc, onClose }: { doc: CaseDocument | null; onClose: () => void }) {
-  const { updateDocument } = useCase()
+  const { uploadDocument } = useCase()
   const input = useRef<HTMLInputElement>(null)
   const [drag, setDrag] = useState(false)
-  const [phase, setPhase] = useState<api.CheckPhase | null>(null)
+  const [phase, setPhase] = useState<CheckPhase | null>(null)
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<{ status: 'ready' | 'rejected'; checks: DocCheck[]; fileName: string } | null>(null)
@@ -40,23 +38,14 @@ export function UploadDialog({ doc, onClose }: { doc: CaseDocument | null; onClo
   const run = async (file: File) => {
     if (!doc) return
     reset()
-    const prev = doc.status
+    setPhase('uploading')
     try {
-      updateDocument(doc.id, { status: 'checking' })
-      const r = await api.checkDocument(doc, file, (p, n) => {
+      const r = await uploadDocument(doc, file, (p, n) => {
         setPhase(p)
         setProgress(n)
       })
-      updateDocument(doc.id, {
-        status: r.status,
-        fileName: file.name,
-        uploadedAt: new Date().toISOString(),
-        checks: r.checks,
-        action: r.status === 'ready' ? undefined : 'upload',
-      })
       setResult({ ...r, fileName: file.name })
     } catch (e) {
-      updateDocument(doc.id, { status: prev })
       setPhase(null)
       setError(e instanceof Error ? e.message : 'Upload failed. Try again.')
     }
@@ -97,7 +86,7 @@ export function UploadDialog({ doc, onClose }: { doc: CaseDocument | null; onClo
               <FileUp className="size-6" aria-hidden />
             </span>
             <span className="font-semibold">Drop a file here or choose one</span>
-            <span className="text-[13px] text-muted">PDF, JPG or PNG, up to {api.MAX_UPLOAD_MB} MB</span>
+            <span className="text-[13px] text-muted">PDF, JPG or PNG, up to {MAX_UPLOAD_MB} MB</span>
           </button>
           <input
             ref={input}
@@ -191,18 +180,24 @@ export function UploadDialog({ doc, onClose }: { doc: CaseDocument | null; onClo
 /* -------------------------------------------------------------- Request */
 
 export function RequestDialog({ doc, onClose }: { doc: CaseDocument | null; onClose: () => void }) {
-  const { updateDocument } = useCase()
+  const { requestDocument } = useCase()
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const send = async () => {
     if (!doc) return
     setLoading(true)
-    await api.requestDocument()
-    updateDocument(doc.id, { status: 'requested', action: 'upload', hint: 'Requested from Corvinus registrar · usually 3 working days' })
-    setLoading(false)
-    toast('Request sent to your university', 'success')
-    onClose()
+    setError(null)
+    try {
+      await requestDocument(doc.id)
+      toast('Request sent to your university', 'success')
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'The request didn’t go through. Try again.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -216,6 +211,7 @@ export function RequestDialog({ doc, onClose }: { doc: CaseDocument | null; onCl
         <dd className="font-semibold">Hungarian and English</dd>
       </dl>
       <p className="mt-4 text-sm text-muted">We’ll send the request from your university email and add the certificate to your case when it arrives.</p>
+      <FormError error={error} />
       <div className="mt-6 flex justify-end gap-2">
         <Button variant="outline" onClick={onClose} disabled={loading}>
           Cancel
@@ -235,37 +231,44 @@ export function PayDialog({
   amount,
   what,
   onClose,
-  onPaid,
+  onPay,
 }: {
   open: boolean
   amount: number
   what: string
   onClose: () => void
-  onPaid?: (reference: string) => void
+  /** Performs the payment on the server. */
+  onPay: () => Promise<void>
 }) {
+  const { user } = useAuth()
   const [loading, setLoading] = useState(false)
-  const [ref, setRef] = useState<string | null>(null)
+  const [paid, setPaid] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const pay = async () => {
     setLoading(true)
-    const r = await api.payWithWise(amount)
-    setLoading(false)
-    setRef(r.reference)
-    onPaid?.(r.reference)
+    setError(null)
+    try {
+      await onPay()
+      setPaid(true)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'The payment didn’t go through. Try again.')
+    } finally {
+      setLoading(false)
+    }
   }
   const close = () => {
     if (loading) return
-    setRef(null)
+    setPaid(false)
+    setError(null)
     onClose()
   }
 
   return (
-    <Dialog open={open} onClose={close} title={ref ? 'Payment sent' : 'Pay with Wise'} description={what}>
-      {ref ? (
+    <Dialog open={open} onClose={close} title={paid ? 'Payment sent' : 'Pay with Wise'} description={what}>
+      {paid ? (
         <>
-          <p className="text-[15px]">
-            {money(amount)} is on its way. We attached the receipt to your case, reference <span className="font-semibold">{ref}</span>.
-          </p>
+          <p className="text-[15px]">{money(amount)} is on its way. We added it to your payments history.</p>
           <div className="mt-6 flex justify-end">
             <Button onClick={close}>Done</Button>
           </div>
@@ -276,10 +279,11 @@ export function PayDialog({
             <p className="text-[13px] text-rose-300">You pay</p>
             <p className="font-display mt-1 text-[34px] leading-none font-semibold">{money(amount)}</p>
             <p className="mt-3 text-[13px] text-rose-300">
-              From your Wise EUR balance · {money(wise.available)} available
+              From your Wise EUR balance · {money(user?.wiseBalance ?? 0)} available
             </p>
           </div>
           <p className="mt-4 text-sm text-muted">Paid in local currency at the mid-market rate. No hidden fees.</p>
+          <FormError error={error} />
           <div className="mt-6 flex justify-end gap-2">
             <Button variant="outline" onClick={close} disabled={loading}>
               Cancel
@@ -291,5 +295,14 @@ export function PayDialog({
         </>
       )}
     </Dialog>
+  )
+}
+
+function FormError({ error }: { error: string | null }) {
+  if (!error) return null
+  return (
+    <p role="alert" className="mt-4 flex items-start gap-2 rounded-xl bg-rose-100 px-4 py-3 text-sm text-brick-700">
+      <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden /> {error}
+    </p>
   )
 }

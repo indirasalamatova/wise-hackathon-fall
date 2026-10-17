@@ -3,15 +3,21 @@ export type CountryCode =
 
 export interface User {
   id: string
-  firstName: string
-  lastName: string
   email: string
+  firstName: string
+  fullName: string
+  initials: string
+  /** Display string from the server, e.g. "July 2025" */
   memberSince: string
   citizenship: CountryCode
-  passport: { last4: string; validUntil: string }
+  citizenshipName: string
+  passportMasked: string
   address: string
   status: string
   studies: string
+  monthlyBudget: number
+  wiseBalance: number
+  settings: Omit<Settings, 'language'>
 }
 
 export type DocStatus = 'missing' | 'needs_update' | 'to_pay' | 'requested' | 'checking' | 'ready' | 'rejected'
@@ -53,6 +59,7 @@ export interface AppNotification {
   body: string
   time: string
   unread: boolean
+  href?: string
 }
 
 export interface Payment {
@@ -85,3 +92,5 @@ export interface Settings {
   email: boolean
   sms: boolean
 }
+
+export type CheckPhase = 'uploading' | 'checking' | 'done'

@@ -6,7 +6,7 @@ import { cn } from '@/lib/format'
 import { useAuth } from '@/store/context'
 
 export function PublicHeader({ overlay = false }: { overlay?: boolean }) {
-  const { user } = useAuth()
+  const { session } = useAuth()
   return (
     <header
       className={cn(
@@ -25,7 +25,7 @@ export function PublicHeader({ overlay = false }: { overlay?: boolean }) {
           <span className="hidden items-center gap-2 sm:flex">
             <Flag code="GB" className="h-3.5 w-5" /> EN
           </span>
-          {user ? (
+          {session ? (
             <ButtonLink to="/app" variant="accent" size="sm" className="h-10 px-5">
               Open my case
             </ButtonLink>

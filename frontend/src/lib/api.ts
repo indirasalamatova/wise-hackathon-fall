@@ -1,140 +1,284 @@
 /**
- * Mock backend. Every call resolves after a short delay so loading states are
- * real. Swap these functions for fetch() calls when the API exists; the
- * signatures are what the UI depends on.
+ * Unbound API client. Each function calls the FastAPI backend (see
+ * backend/app/main.py) and adapts its snake_case shapes to the frontend types,
+ * so pages never see backend field names.
  */
-import { demoUser } from './mock-data'
-import { sleep } from './format'
-import type { CaseDocument, ChatMessage, DocCheck, User } from './types'
+import { ApiError, request, upload } from './http'
+import type {
+  AppNotification,
+  CaseDocument,
+  ChatMessage,
+  CountryCode,
+  DocCheck,
+  DocStatus,
+  NotificationKind,
+  Payment,
+  Settings,
+  Task,
+  TaskCategory,
+  User,
+} from './types'
 
-export class ApiError extends Error {}
+export { ApiError }
+
+/* ------------------------------------------------------- backend shapes */
+
+interface ApiProfile {
+  id: string
+  first_name: string
+  full_name: string
+  initials: string
+  member_since: string
+  citizenship_code: string
+  citizenship_name: string
+  passport_masked: string
+  address: string
+  status: string
+  studies: string
+  monthly_budget_eur: number
+  wise_balance_eur: number
+  connected_wise: boolean
+  connected_calendar: boolean
+  notify_push: boolean
+  notify_email: boolean
+  notify_sms: boolean
+}
+
+interface ApiTask {
+  id: string
+  title: string
+  short_title: string | null
+  category: string
+  due_date: string | null
+  done: boolean
+}
+
+interface ApiDocument {
+  id: string
+  title: string
+  note: string
+  status: string
+  action: string | null
+  file_path: string | null
+}
+
+interface ApiPayment {
+  id: string
+  date_str: string
+  title: string
+  amount_eur: number
+  status: string
+}
+
+interface ApiNotification {
+  id: string
+  title: string
+  body: string
+  time_str: string
+  tone: string
+  icon: string
+  read: boolean
+  href: string
+}
+
+interface ApiChatResponse {
+  role: 'assistant'
+  blocks: { type: 'lead' | 'bullets' | 'text'; text?: string | null; items?: string[] | null }[]
+}
+
+/* -------------------------------------------------------------- adapters */
+
+export type ServerSettings = Omit<Settings, 'language'>
+
+const settingKeys: Record<keyof ServerSettings, keyof ApiProfile> = {
+  wise: 'connected_wise',
+  calendar: 'connected_calendar',
+  push: 'notify_push',
+  email: 'notify_email',
+  sms: 'notify_sms',
+}
+
+function toUser(p: ApiProfile, email: string): User {
+  return {
+    id: p.id,
+    email,
+    firstName: p.first_name,
+    fullName: p.full_name,
+    initials: p.initials,
+    memberSince: p.member_since,
+    citizenship: p.citizenship_code as CountryCode,
+    citizenshipName: p.citizenship_name,
+    passportMasked: p.passport_masked,
+    address: p.address,
+    status: p.status,
+    studies: p.studies,
+    monthlyBudget: p.monthly_budget_eur,
+    wiseBalance: p.wise_balance_eur,
+    settings: {
+      wise: p.connected_wise,
+      calendar: p.connected_calendar,
+      push: p.notify_push,
+      email: p.notify_email,
+      sms: p.notify_sms,
+    },
+  }
+}
+
+const toTask = (t: ApiTask): Task => ({
+  id: t.id,
+  title: t.title,
+  category: t.category as TaskCategory,
+  due: t.due_date ?? undefined,
+  done: t.done,
+})
+
+const toDocument = (d: ApiDocument): CaseDocument => ({
+  id: d.id,
+  name: d.title,
+  hint: d.note,
+  status: d.status as DocStatus,
+  action: (d.action ?? undefined) as CaseDocument['action'],
+  fileName: d.file_path?.split('/').pop(),
+})
+
+const months: Record<string, string> = {
+  Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06',
+  Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12',
+}
+
+/** Backend stores payment dates as "13 Nov 2026". */
+function isoFromDateStr(s: string): string {
+  const m = /^(\d{1,2}) (\w{3}) (\d{4})$/.exec(s.trim())
+  if (m && months[m[2]]) return `${m[3]}-${months[m[2]]}-${m[1].padStart(2, '0')}`
+  return new Date().toISOString().slice(0, 10)
+}
+
+const toPayment = (p: ApiPayment): Payment => ({
+  id: p.id,
+  date: isoFromDateStr(p.date_str),
+  what: p.title,
+  amount: p.amount_eur,
+  status: p.status === 'paid' ? 'paid' : 'upcoming',
+})
+
+const iconKinds: Record<string, NotificationKind> = {
+  clock: 'deadline',
+  banknote: 'money',
+  file: 'document',
+  send: 'travel',
+}
+
+const toNotification = (n: ApiNotification): AppNotification => ({
+  id: n.id,
+  kind: iconKinds[n.icon] ?? 'document',
+  title: n.title,
+  body: n.body,
+  time: n.time_str,
+  unread: !n.read,
+  href: n.href,
+})
+
+function toChat(r: ApiChatResponse): Omit<ChatMessage, 'id'> {
+  const lead = r.blocks.find((b) => b.type === 'lead')?.text
+  const bullets = r.blocks.flatMap((b) => (b.type === 'bullets' ? (b.items ?? []) : []))
+  const texts = r.blocks.filter((b) => b.type === 'text' && b.text).map((b) => b.text!)
+  return {
+    role: 'assistant',
+    text: lead ?? texts.shift() ?? '',
+    bullets: bullets.length ? bullets : undefined,
+    footnote: texts.length ? texts.join(' ') : undefined,
+  }
+}
 
 /* ------------------------------------------------------------------ auth */
 
-export async function login(email: string, password: string): Promise<User> {
-  await sleep(700)
+/**
+ * The backend has no auth yet: it serves one profile (user_default). Login and
+ * signup validate locally and start a session for that profile. Replace with
+ * POST /api/auth/... when multi-user auth lands.
+ */
+export async function login(email: string, password: string): Promise<{ email: string }> {
   if (!/^\S+@\S+\.\S+$/.test(email)) throw new ApiError('Enter an email like name@example.com.')
   if (password.length < 6) throw new ApiError('Password is at least 6 characters. Check it and try again.')
-  if (password === 'wrongpass') throw new ApiError('Email and password don’t match. Try again or reset your password.')
-  return { ...demoUser, email }
+  return { email }
 }
 
-export async function signup(input: { firstName: string; lastName: string; email: string; password: string }): Promise<User> {
-  await sleep(900)
+export async function signup(input: { firstName: string; lastName: string; email: string; password: string }) {
   if (!input.firstName.trim() || !input.lastName.trim()) throw new ApiError('Add your first and last name as they appear in your passport.')
   if (!/^\S+@\S+\.\S+$/.test(input.email)) throw new ApiError('Enter an email like name@example.com.')
   if (input.password.length < 8) throw new ApiError('Use at least 8 characters for your password.')
-  return {
-    ...demoUser,
-    id: `u_${Date.now()}`,
-    firstName: input.firstName.trim(),
-    lastName: input.lastName.trim(),
-    email: input.email,
-    memberSince: new Date().toISOString().slice(0, 10),
-  }
+  return { email: input.email }
 }
+
+/* --------------------------------------------------------------- profile */
+
+export const getProfile = async (email: string) => toUser(await request<ApiProfile>('/api/profile'), email)
+
+export const updateProfile = async (email: string, patch: { fullName?: string; address?: string }) =>
+  toUser(
+    await request<ApiProfile>('/api/profile', {
+      method: 'PATCH',
+      body: { full_name: patch.fullName, address: patch.address },
+    }),
+    email,
+  )
+
+export const updateBudget = async (email: string, monthlyBudget: number) =>
+  toUser(await request<ApiProfile>('/api/profile/budget', { method: 'PATCH', body: { monthly_budget_eur: monthlyBudget } }), email)
+
+export const updateSetting = async (email: string, key: keyof ServerSettings, value: boolean) =>
+  toUser(await request<ApiProfile>('/api/profile/settings', { method: 'PATCH', body: { [settingKeys[key]]: value } }), email)
+
+/* ----------------------------------------------------------------- tasks */
+
+export const listTasks = async () => (await request<ApiTask[]>('/api/tasks')).map(toTask)
+
+export const createTask = async (title: string, category: TaskCategory = 'Personal') =>
+  toTask(await request<ApiTask>('/api/tasks', { method: 'POST', body: { title, category } }))
+
+export const setTaskDone = async (id: string, done: boolean) =>
+  toTask(await request<ApiTask>(`/api/tasks/${id}`, { method: 'PATCH', body: { done } }))
+
+export const deleteTask = (id: string) => request<unknown>(`/api/tasks/${id}`, { method: 'DELETE' })
 
 /* ------------------------------------------------------------- documents */
 
 export const MAX_UPLOAD_MB = 10
 const ACCEPTED = ['application/pdf', 'image/jpeg', 'image/png']
 
-export type CheckPhase = 'uploading' | 'reading' | 'checking' | 'done'
+export const listDocuments = async () => (await request<ApiDocument[]>('/api/documents')).map(toDocument)
 
-/**
- * Simulates upload + AI check. Files whose name contains "old" or "expired"
- * fail the validity check, so the rejected path can be demoed.
- */
-export async function checkDocument(
-  doc: CaseDocument,
-  file: File,
-  onPhase: (p: CheckPhase, progress: number) => void,
-): Promise<{ status: 'ready' | 'rejected'; checks: DocCheck[] }> {
+/** Asks the university for the document; it stays open for upload once it arrives. */
+export const requestDocument = async (id: string) =>
+  toDocument(await request<ApiDocument>(`/api/documents/${id}`, { method: 'PATCH', body: { status: 'requested', action: 'upload' } }))
+
+export const payDocument = async (id: string) => toDocument(await request<ApiDocument>(`/api/documents/${id}/pay`, { method: 'POST' }))
+
+/** Uploads to storage; the server runs the AI check and answers with its results. */
+export async function uploadDocument(id: string, file: File, onProgress: (pct: number) => void) {
+  // Checked here too, so a wrong file fails before the upload starts.
   if (!ACCEPTED.includes(file.type)) throw new ApiError('Upload a PDF, JPG or PNG file.')
   if (file.size > MAX_UPLOAD_MB * 1024 * 1024) throw new ApiError(`This file is over ${MAX_UPLOAD_MB} MB. Compress it or upload a single page.`)
-
-  for (let p = 0; p <= 100; p += 20) {
-    onPhase('uploading', p)
-    await sleep(120)
-  }
-  onPhase('reading', 100)
-  await sleep(800)
-  onPhase('checking', 100)
-  await sleep(1100)
-
-  const stale = /old|expired/i.test(file.name)
-  const checks: DocCheck[] = [
-    { label: 'Name matches passport', ok: true, detail: 'Aigerim Nurlanovna' },
-    { label: `Recognised as ${doc.name.toLowerCase()}`, ok: true, detail: 'All pages present, text is sharp' },
-    stale
-      ? { label: 'Valid for your new permit', ok: false, detail: 'Ends before 31 Jan 2027. Upload a policy that covers the full permit period.' }
-      : { label: 'Valid for your new permit', ok: true, detail: 'Covers the full permit period' },
-    { label: 'Accepted format', ok: true, detail: file.type === 'application/pdf' ? 'PDF' : 'Image' },
-  ]
-  onPhase('done', 100)
-  return { status: stale ? 'rejected' : 'ready', checks }
+  const r = await upload<{ document: ApiDocument; checks: DocCheck[] }>(`/api/documents/${id}/upload`, file, onProgress)
+  return { document: { ...toDocument(r.document), fileName: file.name, checks: r.checks }, checks: r.checks }
 }
 
-export async function requestDocument(): Promise<void> {
-  await sleep(900)
-}
+/* -------------------------------------------------------------- payments */
 
-export async function payWithWise(amount: number): Promise<{ reference: string }> {
-  await sleep(1200)
-  return { reference: `WISE-${Math.round(amount * 1000).toString(36).toUpperCase()}` }
-}
+export const listPayments = async () => (await request<ApiPayment[]>('/api/payments')).map(toPayment)
+
+export const payVisaFee = async (title: string, amount: number) =>
+  toPayment(await request<ApiPayment>('/api/payments/pay-visa-fee', { method: 'POST', body: { title, amount_eur: amount } }))
+
+/* --------------------------------------------------------- notifications */
+
+export const listNotifications = async () => (await request<ApiNotification[]>('/api/notifications')).map(toNotification)
+
+export const markNotificationRead = (id: string) => request<ApiNotification>(`/api/notifications/${id}/read`, { method: 'POST' })
+
+export const markAllNotificationsRead = () => request<unknown>('/api/notifications/mark-all-read', { method: 'POST' })
 
 /* ------------------------------------------------------------- assistant */
 
-const answers: { match: RegExp; reply: Omit<ChatMessage, 'id' | 'role'> }[] = [
-  {
-    match: /renew|still need|permit/i,
-    reply: {
-      text: 'You still need 3 items:',
-      bullets: [
-        'Student status certificate — missing',
-        'Health insurance — needs update',
-        'Fee payment receipt — to pay',
-      ],
-      footnote: 'Next step: request the certificate by Fri 23 Oct. Submit on Enter Hungary by 13 Nov, then biometrics on 26 Nov.',
-    },
-  },
-  {
-    match: /travel|turkey|trip|christmas/i,
-    reply: {
-      text: 'Yes, you can travel to Turkey over Christmas. Your current card is valid until 31 Jan 2027, so you can leave and re-enter Hungary freely.',
-      bullets: [
-        'Kazakh passport holders enter Turkey visa-free for up to 30 days',
-        'Carry your residence card and passport together',
-        'If you travel after 31 Jan, bring your renewal receipt',
-      ],
-    },
-  },
-  {
-    match: /budget|country|graduat/i,
-    reply: {
-      text: 'With €1,100 a month and €6,240 saved, Hungary fits best after graduation: a 9-month job-seeking permit and living costs around €780 a month.',
-      bullets: ['Poland and Czechia also fit your budget', 'Germany is €150 a month short at your current budget'],
-      footnote: 'See the full comparison in Finances.',
-    },
-  },
-  {
-    match: /german|money|job-seeker|opportunity/i,
-    reply: {
-      text: 'For the German Opportunity Card you need to show about €1,100 a month for 12 months, around €13,200 in total.',
-      bullets: ['You have €6,240 in Wise, so you are €6,960 short', 'A blocked account or a job offer can replace part of this'],
-      footnote: 'Sample figures. Check current amounts with the official source.',
-    },
-  },
-]
-
-export async function askAssistant(question: string): Promise<Omit<ChatMessage, 'id'>> {
-  await sleep(1200 + Math.random() * 600)
-  const hit = answers.find((a) => a.match.test(question))
-  return {
-    role: 'assistant',
-    ...(hit?.reply ?? {
-      text: 'I can help with your renewal, travel, money and what happens after graduation. Try asking what you still need for your permit, or which country fits your budget.',
-    }),
-  }
-}
+export const askAssistant = async (message: string) =>
+  toChat(await request<ApiChatResponse>('/api/assistant/chat', { method: 'POST', body: { message } }))

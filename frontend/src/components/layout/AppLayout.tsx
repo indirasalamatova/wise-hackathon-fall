@@ -1,13 +1,40 @@
 import { useEffect, useState } from 'react'
 import { Navigate, Outlet, useLocation } from 'react-router'
-import { useAuth } from '@/store/context'
+import { Loader2 } from 'lucide-react'
+import { LogoMark } from '@/components/brand/Logo'
+import { Button } from '@/components/ui/Button'
+import { useAuth, useCase } from '@/store/context'
 import { usePersistentState } from '@/store/persist'
 import { cn } from '@/lib/format'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
 
+function Gate({ error, onRetry }: { error: string | null; onRetry: () => void }) {
+  return (
+    <div className="grid min-h-svh place-content-center justify-items-center gap-5 bg-blush px-4 text-center">
+      <span className="grid size-14 place-items-center rounded-2xl bg-forest-950">
+        <LogoMark className="size-9" />
+      </span>
+      {error ? (
+        <>
+          <div>
+            <h1 className="text-lg font-semibold text-forest-950">Your case didn’t load</h1>
+            <p className="mt-1 max-w-sm text-sm text-muted">{error}</p>
+          </div>
+          <Button onClick={onRetry}>Try again</Button>
+        </>
+      ) : (
+        <p className="flex items-center gap-2 text-sm text-muted" role="status">
+          <Loader2 className="size-4 animate-spin" aria-hidden /> Loading your case…
+        </p>
+      )}
+    </div>
+  )
+}
+
 export function AppLayout() {
-  const { user } = useAuth()
+  const auth = useAuth()
+  const kase = useCase()
   const location = useLocation()
   const [collapsed, setCollapsed] = usePersistentState('sidebar-collapsed', false)
   const [drawer, setDrawer] = useState(false)
@@ -16,7 +43,18 @@ export function AppLayout() {
     document.body.style.overflow = drawer ? 'hidden' : ''
   }, [drawer])
 
-  if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />
+  if (!auth.session) return <Navigate to="/login" replace state={{ from: location.pathname }} />
+  if (auth.status === 'error' || kase.status === 'error')
+    return (
+      <Gate
+        error={auth.error ?? kase.error}
+        onRetry={() => {
+          if (auth.status === 'error') auth.reload()
+          if (kase.status === 'error') kase.reload()
+        }}
+      />
+    )
+  if (!auth.user || kase.status !== 'ready') return <Gate error={null} onRetry={() => {}} />
 
   return (
     <div className="flex min-h-svh bg-blush">

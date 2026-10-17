@@ -52,8 +52,10 @@ function TaskRow({ task }: { task: Task }) {
 
 export function TodoPage() {
   const { tasks, addTask } = useCase()
+  const { toast } = useToast()
   const [filter, setFilter] = useState<Filter>('open')
   const [draft, setDraft] = useState('')
+  const [adding, setAdding] = useState(false)
   const open = tasks.filter((t) => !t.done)
   const done = tasks.filter((t) => t.done)
 
@@ -76,12 +78,19 @@ export function TodoPage() {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_248px] xl:grid-cols-[minmax(0,1fr)_248px]">
         <div>
           <form
-            onSubmit={(e) => {
+            onSubmit={async (e) => {
               e.preventDefault()
               if (!draft.trim()) return
-              addTask(draft.trim())
-              setDraft('')
-              setFilter('open')
+              setAdding(true)
+              try {
+                await addTask(draft.trim())
+                setDraft('')
+                setFilter('open')
+              } catch (err) {
+                toast(err instanceof Error ? err.message : 'Task wasn’t added. Try again.', 'error')
+              } finally {
+                setAdding(false)
+              }
             }}
             className="flex gap-3"
           >
@@ -89,7 +98,7 @@ export function TodoPage() {
               New task
             </label>
             <Input id="new-task" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Add a task, e.g. Book translator" />
-            <Button type="submit" size="lg" disabled={!draft.trim()} className="h-12 shrink-0">
+            <Button type="submit" size="lg" disabled={!draft.trim()} loading={adding} className="h-12 shrink-0">
               Add task
             </Button>
           </form>

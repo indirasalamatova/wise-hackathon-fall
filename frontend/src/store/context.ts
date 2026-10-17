@@ -1,35 +1,54 @@
 import { createContext, useContext } from 'react'
-import type { AppNotification, CaseDocument, ChatMessage, Settings, Task, User } from '@/lib/types'
+import type { AppNotification, CaseDocument, ChatMessage, CheckPhase, DocCheck, Payment, Settings, Task, User } from '@/lib/types'
+
+export type LoadStatus = 'idle' | 'loading' | 'ready' | 'error'
 
 export interface AuthContextValue {
+  /** Logged-in session. The profile behind it is loaded from the API into `user`. */
+  session: { email: string; started: number } | null
   user: User | null
+  status: LoadStatus
+  error: string | null
+  reload: () => void
   login: (email: string, password: string) => Promise<void>
   signup: (input: { firstName: string; lastName: string; email: string; password: string }) => Promise<void>
   logout: () => void
-  updateUser: (patch: Partial<User>) => void
+  updateUser: (patch: { fullName?: string; address?: string }) => Promise<void>
+  setBudget: (monthlyBudget: number) => Promise<void>
+  settings: Settings
+  setSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => void
 }
 
 export interface CaseContextValue {
+  status: LoadStatus
+  error: string | null
+  reload: () => void
+
   documents: CaseDocument[]
-  updateDocument: (id: string, patch: Partial<CaseDocument>) => void
+  uploadDocument: (
+    doc: CaseDocument,
+    file: File,
+    onPhase: (phase: CheckPhase, progress: number) => void,
+  ) => Promise<{ status: 'ready' | 'rejected'; checks: DocCheck[] }>
+  requestDocument: (id: string) => Promise<void>
+  payDocument: (id: string) => Promise<void>
 
   tasks: Task[]
-  addTask: (title: string) => void
+  addTask: (title: string) => Promise<void>
   toggleTask: (id: string) => void
   removeTask: (id: string) => void
+
+  payments: Payment[]
+  payVisaFee: (title: string, amount: number) => Promise<void>
 
   notifications: AppNotification[]
   markAllRead: () => void
   markRead: (id: string) => void
 
   chat: ChatMessage[]
-  pushChat: (m: Omit<ChatMessage, 'id'>) => void
+  ask: (question: string) => Promise<void>
+  thinking: boolean
   clearChat: () => void
-
-  settings: Settings
-  setSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => void
-
-  resetDemo: () => void
 }
 
 export interface ToastValue {

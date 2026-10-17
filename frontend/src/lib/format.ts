@@ -27,12 +27,6 @@ export function shortDate(iso: string, opts: Intl.DateTimeFormatOptions = { day:
   return new Date(y, m - 1, d).toLocaleDateString('en-GB', opts)
 }
 
-export function initials(first: string, last: string) {
-  return `${first[0] ?? ''}${last[0] ?? ''}`.toUpperCase()
-}
-
 export function uid(prefix = 'id') {
   return `${prefix}_${Math.random().toString(36).slice(2, 9)}`
 }
-
-export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))

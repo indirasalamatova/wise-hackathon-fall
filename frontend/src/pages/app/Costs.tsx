@@ -4,10 +4,9 @@ import { Flag } from '@/components/brand/Flag'
 import { Button } from '@/components/ui/Button'
 import { Card, CardTitle, Checkbox, PageHeader, Segmented } from '@/components/ui/primitives'
 import { PayDialog } from '@/components/case/DocumentDialogs'
-import { payments as seedPayments, visaOptions } from '@/lib/mock-data'
-import { cn, money, shortDate, uid } from '@/lib/format'
-import type { Payment } from '@/lib/types'
-import { usePersistentState } from '@/store/persist'
+import { visaOptions } from '@/lib/mock-data'
+import { cn, money, shortDate } from '@/lib/format'
+import { useCase } from '@/store/context'
 import { FinanceTabs } from './Finances'
 
 type Line = { on: boolean; qty: number }
@@ -107,7 +106,7 @@ function Calculator({ onPay }: { onPay: (amount: number, what: string) => void }
 }
 
 export function CostsPage() {
-  const [payments, setPayments] = usePersistentState<Payment[]>('payments', seedPayments)
+  const { payments, payVisaFee } = useCase()
   const [filter, setFilter] = useState<'all' | 'upcoming' | 'paid'>('all')
   const [pay, setPay] = useState<{ amount: number; what: string } | null>(null)
   const list = payments.filter((p) => filter === 'all' || p.status === filter).sort((a, b) => b.date.localeCompare(a.date))
@@ -168,13 +167,7 @@ export function CostsPage() {
         amount={pay?.amount ?? 0}
         what={pay?.what ?? ''}
         onClose={() => setPay(null)}
-        onPaid={() =>
-          pay &&
-          setPayments((ps) => [
-            { id: uid('p'), date: new Date().toISOString().slice(0, 10), what: pay.what, amount: pay.amount, status: 'paid' },
-            ...ps,
-          ])
-        }
+        onPay={() => (pay ? payVisaFee(pay.what, pay.amount) : Promise.resolve())}
       />
     </>
   )

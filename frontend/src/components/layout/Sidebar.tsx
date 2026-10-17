@@ -3,7 +3,7 @@ import { FileText, ListChecks, MessageSquareText, Route, Wallet, PanelLeftClose,
 import { Logo, LogoMark } from '@/components/brand/Logo'
 import { Avatar } from '@/components/ui/primitives'
 import { useAuth, useCase } from '@/store/context'
-import { cn, initials } from '@/lib/format'
+import { cn } from '@/lib/format'
 
 const navItems = [
   { to: '/app', label: 'Assistant', icon: MessageSquareText, end: true },
@@ -112,11 +112,11 @@ export function Sidebar({
             )
           }
         >
-          <Avatar text={initials(user.firstName, user.lastName)} />
+          <Avatar text={user.initials} />
           {!collapsed && (
             <span className="min-w-0 leading-tight">
               <span className="block truncate text-sm font-semibold">
-                {user.firstName} {user.lastName}
+                {user.fullName}
               </span>
               <span className="text-xs opacity-80">My profile</span>
             </span>

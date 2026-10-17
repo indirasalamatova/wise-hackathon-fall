@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { NavLink } from 'react-router'
 import { Flag } from '@/components/brand/Flag'
 import { Badge, Card, CardTitle, PageHeader, Progress } from '@/components/ui/primitives'
-import { budgetCountries, payments, proofOfFunds, wise } from '@/lib/mock-data'
+import { budgetCountries, proofOfFunds } from '@/lib/mock-data'
 import { cn, money, shortDate } from '@/lib/format'
-import { usePersistentState } from '@/store/persist'
+import { useAuth, useCase, useToast } from '@/store/context'
 
 export function FinanceTabs() {
   const tab = ({ isActive }: { isActive: boolean }) =>
@@ -37,8 +37,25 @@ function Stat({ label, value, sub, dark }: { label: string; value: string; sub: 
 const MAX_LIVING = 1500
 
 export function FinancesPage() {
-  const [budget, setBudget] = usePersistentState('monthly-budget', 1100)
+  const { user, setBudget: saveBudget } = useAuth()
+  const { payments } = useCase()
+  const { toast } = useToast()
+  const saved = user?.monthlyBudget ?? 1100
+  const wiseBalance = user?.wiseBalance ?? 0
+  const [budget, setBudget] = useState(saved)
   const [selected, setSelected] = useState<string>('HU')
+
+  // Save the slider once it settles, not on every step.
+  useEffect(() => {
+    if (budget === saved) return
+    const t = setTimeout(() => {
+      saveBudget(budget).catch((e) => {
+        setBudget(saved)
+        toast(e instanceof Error ? e.message : 'Budget wasn’t saved. Try again.', 'error')
+      })
+    }, 500)
+    return () => clearTimeout(t)
+  }, [budget, saved, saveBudget, toast])
 
   const ranked = useMemo(() => [...budgetCountries].sort((a, b) => a.living - b.living), [])
   const bestFit = ranked.find((c) => c.living <= budget)
@@ -51,8 +68,8 @@ export function FinancesPage() {
       <FinanceTabs />
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <Stat dark label="Available in Wise" value={money(wise.available)} sub={wise.balances} />
-        <Stat label="Upcoming payments" value={money(upcomingTotal)} sub={upcoming[0] ? `Next: fee on ${shortDate(upcoming[upcoming.length - 1].date)}` : 'Nothing due'} />
+        <Stat dark label="Available in Wise" value={money(wiseBalance)} sub="EUR + HUF balances" />
+        <Stat label="Upcoming payments" value={money(upcomingTotal)} sub={upcoming[0] ? `Next: ${upcoming[0].what.toLowerCase()} on ${shortDate(upcoming[0].date)}` : 'Nothing due'} />
         <Stat label="Monthly budget" value={money(budget)} sub="Set below" />
         <Stat label="Best fit right now" value={bestFit?.name ?? 'None yet'} sub={bestFit?.permit.replace(/\s*\(.*\)/, '') ?? 'Raise your budget'} />
       </div>
@@ -61,7 +78,7 @@ export function FinancesPage() {
         <Card className="p-6">
           <CardTitle>Best country for my budget</CardTitle>
           <p className="mt-1 text-[13px] text-muted">
-            Monthly budget {money(budget)} · Savings {money(wise.available)} · Stay after graduation
+            Monthly budget {money(budget)} · Savings {money(wiseBalance)} · Stay after graduation
           </p>
 
           <label htmlFor="budget" className="mt-5 flex items-center justify-between text-sm font-semibold">
@@ -118,7 +135,7 @@ export function FinancesPage() {
           <p className="mt-1 text-[13px] text-muted">Your Wise balance vs what each visa asks</p>
           <ul className="mt-6 flex flex-col gap-5">
             {proofOfFunds.map((p) => {
-              const short = p.required - wise.available
+              const short = p.required - wiseBalance
               const covered = short <= 0
               return (
                 <li key={p.code}>
@@ -132,7 +149,7 @@ export function FinancesPage() {
                     </Badge>
                   </div>
                   <Progress
-                    value={Math.min(100, (wise.available / p.required) * 100)}
+                    value={Math.min(100, (wiseBalance / p.required) * 100)}
                     tone={covered ? 'ok' : 'accent'}
                     label={`${p.label} funds covered`}
                   />

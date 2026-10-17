@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { BrowserRouter, Link, Route, Routes, useLocation } from 'react-router'
+import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from 'react-router'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { buttonClass } from '@/components/ui/button-class'
 import { AssistantPage } from '@/pages/app/Assistant'
@@ -48,6 +48,7 @@ export default function App() {
               <Route path="/signup" element={<SignupPage />} />
               <Route path="/app" element={<AppLayout />}>
                 <Route index element={<AssistantPage />} />
+                <Route path="assistant" element={<Navigate to="/app" replace />} />
                 <Route path="journey" element={<JourneyPage />} />
                 <Route path="documents" element={<DocumentsPage />} />
                 <Route path="finances" element={<FinancesPage />} />

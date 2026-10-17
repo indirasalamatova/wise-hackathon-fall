@@ -5,7 +5,6 @@ import { LogoMark } from '@/components/brand/Logo'
 import { Badge, Card, CardTitle, DateTile } from '@/components/ui/primitives'
 import { Button } from '@/components/ui/Button'
 import { RequestDialog } from '@/components/case/DocumentDialogs'
-import { askAssistant } from '@/lib/api'
 import { caseSummary, suggestedQuestions } from '@/lib/mock-data'
 import { cn, daysUntil, relativeDays } from '@/lib/format'
 import type { CaseDocument } from '@/lib/types'
@@ -21,9 +20,8 @@ function Spark({ className }: { className?: string }) {
 
 function Chat() {
   const { user } = useAuth()
-  const { chat, pushChat, clearChat } = useCase()
+  const { chat, ask: askServer, thinking, clearChat } = useCase()
   const [draft, setDraft] = useState('')
-  const [thinking, setThinking] = useState(false)
   const scroller = useRef<HTMLDivElement>(null)
   const daysLeft = daysUntil(caseSummary.permitExpires)
 
@@ -35,10 +33,7 @@ function Chat() {
     const text = q.trim()
     if (!text || thinking) return
     setDraft('')
-    pushChat({ role: 'user', text })
-    setThinking(true)
-    pushChat(await askAssistant(text))
-    setThinking(false)
+    await askServer(text)
   }
 
   const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
@@ -166,8 +161,7 @@ export function AssistantPage() {
     .filter((t) => !t.done && t.due && daysUntil(t.due) >= 0)
     .sort((a, b) => a.due!.localeCompare(b.due!))
     .slice(0, 4)
-  const certificate = documents.find((d) => d.id === 'd_student')
-  const certificatePending = certificate && certificate.status === 'missing'
+  const certificate = documents.find((d) => d.action === 'request' && d.status === 'missing')
 
   return (
     // Increased right column width (e.g., 320px / 340px) to make the panel wider
@@ -180,9 +174,9 @@ export function AssistantPage() {
           <Badge tone="accent" className="h-[22px] text-[11px]">
             Next step
           </Badge>
-          {certificatePending ? (
+          {certificate ? (
             <>
-              <h2 className="mt-3 text-lg leading-snug font-semibold">Request your student status certificate</h2>
+              <h2 className="mt-3 text-lg leading-snug font-semibold">Request your {certificate.name.toLowerCase()}</h2>
               <p className="mt-4 text-[13px] text-rose-300">
                 Must be issued within 30 days of your submission. Due Fri 23 Oct.
               </p>

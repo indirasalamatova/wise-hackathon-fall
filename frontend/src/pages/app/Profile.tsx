@@ -4,12 +4,11 @@ import { Flag } from '@/components/brand/Flag'
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
 import { Avatar, Card, CardTitle, Field, Input, PageHeader, Toggle } from '@/components/ui/primitives'
-import { initials, shortDate } from '@/lib/format'
 import type { Settings, User } from '@/lib/types'
-import { useAuth, useCase, useToast } from '@/store/context'
+import { useAuth, useToast } from '@/store/context'
 
 function SettingRow({ k, title, hint }: { k: keyof Omit<Settings, 'language'>; title: string; hint?: string }) {
-  const { settings, setSetting } = useCase()
+  const { settings, setSetting } = useAuth()
   return (
     <div className="flex items-center justify-between gap-4 py-2.5">
       <div>
@@ -24,35 +23,47 @@ function SettingRow({ k, title, hint }: { k: keyof Omit<Settings, 'language'>; t
 function EditDialog({ open, onClose, user }: { open: boolean; onClose: () => void; user: User }) {
   const { updateUser } = useAuth()
   const { toast } = useToast()
-  const [form, setForm] = useState({ firstName: user.firstName, lastName: user.lastName, address: user.address })
+  const [form, setForm] = useState({ fullName: user.fullName, address: user.address })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   return (
-    <Dialog open={open} onClose={onClose} title="Edit details" description="Use your name exactly as it appears in your passport.">
+    <Dialog open={open} onClose={() => !saving && onClose()} title="Edit details" description="Use your name exactly as it appears in your passport.">
       <form
         className="flex flex-col gap-4"
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault()
-          updateUser(form)
-          toast('Details saved', 'success')
-          onClose()
+          setSaving(true)
+          setError(null)
+          try {
+            await updateUser(form)
+            toast('Details saved', 'success')
+            onClose()
+          } catch (err) {
+            setError(err instanceof Error ? err.message : 'Details weren’t saved. Try again.')
+          } finally {
+            setSaving(false)
+          }
         }}
       >
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="First name" htmlFor="ed-first">
-            <Input id="ed-first" value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} required />
-          </Field>
-          <Field label="Last name" htmlFor="ed-last">
-            <Input id="ed-last" value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} required />
-          </Field>
-        </div>
+        <Field label="Full name" htmlFor="ed-name">
+          <Input id="ed-name" value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} required />
+        </Field>
         <Field label="Address" htmlFor="ed-address">
           <Input id="ed-address" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
         </Field>
+        {error && (
+          <p role="alert" className="rounded-xl bg-rose-100 px-4 py-3 text-sm text-brick-700">
+            {error}
+          </p>
+        )}
         <div className="mt-2 flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button type="submit">Save changes</Button>
+          <Button type="submit" loading={saving}>
+            Save changes
+          </Button>
         </div>
       </form>
     </Dialog>
@@ -61,7 +72,6 @@ function EditDialog({ open, onClose, user }: { open: boolean; onClose: () => voi
 
 export function ProfilePage() {
   const { user, logout } = useAuth()
-  const { resetDemo } = useCase()
   const { toast } = useToast()
   const navigate = useNavigate()
   const [editing, setEditing] = useState(false)
@@ -72,10 +82,10 @@ export function ProfilePage() {
     [
       'Citizenship',
       <span className="flex items-center gap-2">
-        <Flag code={user.citizenship} className="h-4 w-[22px]" /> Kazakhstan
+        <Flag code={user.citizenship} className="h-4 w-[22px]" /> {user.citizenshipName}
       </span>,
     ],
-    ['Passport', `•••• ${user.passport.last4} · valid to ${shortDate(user.passport.validUntil, { day: 'numeric', month: 'short', year: 'numeric' })}`],
+    ['Passport', user.passportMasked],
     ['Address', user.address],
     ['Status', user.status],
     ['Studies', user.studies],
@@ -107,14 +117,10 @@ export function ProfilePage() {
         <div className="flex flex-col gap-4">
           <Card className="p-6">
             <div className="flex items-center gap-4">
-              <Avatar size="xl" text={initials(user.firstName, user.lastName)} />
+              <Avatar size="xl" text={user.initials} />
               <div>
-                <p className="font-display text-xl font-semibold">
-                  {user.firstName} {user.lastName}
-                </p>
-                <p className="text-[13px] text-muted">
-                  Member since {shortDate(user.memberSince, { month: 'long', year: 'numeric' })}
-                </p>
+                <p className="font-display text-xl font-semibold">{user.fullName}</p>
+                <p className="text-[13px] text-muted">Member since {user.memberSince}</p>
               </div>
             </div>
             <dl className="mt-6 grid grid-cols-[110px_minmax(0,1fr)] gap-y-3.5 text-sm">
@@ -163,16 +169,6 @@ export function ProfilePage() {
             <SettingRow k="email" title="Email" hint="Weekly summary and urgent deadlines" />
             <SettingRow k="sms" title="SMS for urgent deadlines" hint="Permit expiry and appointment day only" />
           </Card>
-          <button
-            type="button"
-            onClick={() => {
-              resetDemo()
-              toast('Demo data reset')
-            }}
-            className="self-start px-2 text-[13px] text-muted underline underline-offset-2 hover:text-forest-950"
-          >
-            Reset demo data
-          </button>
         </div>
       </div>
 
@@ -191,8 +187,9 @@ export function ProfilePage() {
           <Button
             variant="accent"
             onClick={() => {
-              logout()
-              navigate('/')
+              // No delete endpoint yet; don't pretend the data is gone.
+              setDeleting(false)
+              toast('Account deletion isn’t available yet. Contact support to remove your data.', 'error')
             }}
           >
             Delete account
