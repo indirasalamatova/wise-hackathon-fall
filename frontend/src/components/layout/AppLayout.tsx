@@ -48,7 +48,7 @@ export function AppLayout() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar onMenu={() => setDrawer(true)} />
-        <main id="main" className="w-full max-w-[1280px] flex-1 px-4 py-6 sm:px-7 sm:py-8">
+        <main id="main" className="w-full flex-1 px-4 py-6 sm:px-7 sm:py-8">
           <Outlet />
         </main>
       </div>

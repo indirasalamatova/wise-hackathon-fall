@@ -8,7 +8,12 @@ import { useAuth } from '@/store/context'
 export function PublicHeader({ overlay = false }: { overlay?: boolean }) {
   const { user } = useAuth()
   return (
-    <header className={cn('z-20 w-full', overlay ? 'absolute inset-x-0 top-0' : 'bg-forest-950')}>
+    <header
+      className={cn(
+        'fixed inset-x-0 top-0 z-50 w-full backdrop-blur-md transition-colors',
+        overlay ? 'bg-forest-950/70 border-b border-white/10' : 'bg-forest-950'
+      )}
+    >
       <div className="mx-auto flex h-20 max-w-[1240px] items-center gap-6 px-4 sm:px-8">
         <Link to="/" aria-label="Unbound home">
           <Logo />

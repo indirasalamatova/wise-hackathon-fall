@@ -226,7 +226,7 @@ function Closing() {
             </h2>
             <p className="mt-5 text-[17px] text-sage-100/80">Create a free account, answer a few questions and get your personal plan today.</p>
           </div>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap justify-center gap-3">
             <ButtonLink to="/signup" variant="accent" size="lg">
               Create free account
             </ButtonLink>
