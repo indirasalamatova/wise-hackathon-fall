@@ -217,7 +217,9 @@ def normalize_extraction(raw: dict[str, Any], today: Optional[date] = None) -> t
             out["mrz_verified"] = True
             for key in ("document_number", "nationality", "date_of_birth", "expiry_date", "surname", "given_names", "sex"):
                 visual, machine = out.get(key), res.fields.get(key)
-                if machine and visual and visual != machine and key not in ("surname", "given_names"):
+                # A printed nationality is often a name ("UTOPIAN"), the MRZ a code ("UTO"): only compare codes.
+                comparable = key != "nationality" or (visual and len(visual) == 3)
+                if machine and visual and visual != machine and comparable and key not in ("surname", "given_names"):
                     issues.append({"field": key, "severity": "warning", "message": f"Printed {key.replace('_', ' ')} ({visual}) differs from the MRZ ({machine}). Using the MRZ."})
                 if machine:
                     out[key] = machine

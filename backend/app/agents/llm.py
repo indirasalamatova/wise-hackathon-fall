@@ -21,7 +21,7 @@ MODEL = os.getenv("ANTHROPIC_MODEL", "claude-opus-5-5")
 FALLBACK = {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
 
 # Gemini. Flash fits the free tier's rate limits; an agent turn makes several calls.
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
 
 _anthropic: Optional[AsyncAnthropic] = None
 _gemini = None

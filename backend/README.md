@@ -16,7 +16,12 @@ isn't configured. Optional: `GUIDELINE_MAX_AGE_DAYS` (default `90`).
 | | Gemini | Claude |
 | --- | --- | --- |
 | Key | `GEMINI_API_KEY` ([AI Studio](https://aistudio.google.com/apikey)) | `ANTHROPIC_API_KEY` |
-| Model | `GEMINI_MODEL` (default `gemini-2.5-flash`) | `ANTHROPIC_MODEL` (default `claude-opus-5-5`), `AGENT_EFFORT` (default `high`) |
+| Model | `GEMINI_MODEL` (default `gemini-3.5-flash`) | `ANTHROPIC_MODEL` (default `claude-opus-5-5`), `AGENT_EFFORT` (default `high`) |
+
+List the Gemini models your key can use (the current one is starred):
+`docker exec unbound_backend python -m app.cli.list_models`. Not every listed model works on every
+key: previews may have no free quota (429), and some need the API enabled in the key's Google Cloud
+project (403).
 
 `LLM_PROVIDER=gemini|anthropic` picks one; unset, Gemini is used when `GEMINI_API_KEY` is set. After
 changing `.env`, recreate the container: `docker compose up -d backend`. Conversations remember the

@@ -61,7 +61,7 @@ services:
       # LLM_PROVIDER: gemini or anthropic; unset = gemini when GEMINI_API_KEY is set.
       LLM_PROVIDER: ${LLM_PROVIDER:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-1.5-flash}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-5-5}
       AGENT_EFFORT: ${AGENT_EFFORT:-high}

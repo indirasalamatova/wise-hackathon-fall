@@ -125,3 +125,10 @@ def test_min_amount_compares_exact_decimals():
     assert check_requirements(req, [low], None, None, TODAY)["requirements"][0]["status"] == "problem"
     assert check_requirements(req, [ok], None, None, TODAY)["requirements"][0]["status"] == "satisfied"
     assert "convert" in check_requirements(req, [usd], None, None, TODAY)["requirements"][0]["problems"][0]["problems"][0]
+
+
+def test_nationality_name_is_not_a_mismatch_with_mrz_code():
+    _, issues = normalize_extraction({"document_kind": "passport", "nationality": "Utopian", "mrz": {"line1": MRZ1, "line2": MRZ2}}, TODAY)
+    assert not any(i["field"] == "nationality" for i in issues)
+    _, issues = normalize_extraction({"document_kind": "passport", "nationality": "RUS", "mrz": {"line1": MRZ1, "line2": MRZ2}}, TODAY)
+    assert any(i["field"] == "nationality" for i in issues)
