@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { CheckCircle2, AlertCircle } from 'lucide-react'
+import { translate } from '@/i18n'
 import * as api from '@/lib/api'
 import { cn, uid } from '@/lib/format'
 import { setAuthToken, setUnauthorizedHandler } from '@/lib/http'
@@ -10,7 +11,7 @@ import { clearPersisted, usePersistentState } from './persist'
 const isSession = (v: unknown): v is { token: string } =>
   typeof v === 'object' && v !== null && typeof (v as { token?: unknown }).token === 'string' && (v as { token: string }).token.length > 0
 
-const errorText = (e: unknown) => (e instanceof Error ? e.message : 'Something went wrong. Try again.')
+const errorText = (e: unknown) => (e instanceof Error ? e.message : translate('error.generic'))
 
 /** Loads a value whenever `key` changes; `null` key means nothing to load. */
 function useLoader<T>(key: string | null, load: () => Promise<T>) {
@@ -52,7 +53,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // or a hand-edited value) would look logged in but never load, so treat it as logged out.
   const session = isSession(stored) ? stored : null
   const [sessionExpired, setSessionExpired] = useState(false)
-  const [language, setLanguage] = usePersistentState<Settings['language']>('language', 'EN')
 
   useEffect(() => {
     if (stored !== null && !isSession(stored)) setSession(null)
@@ -75,10 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
   }, [logout])
 
-  const settings = useMemo<Settings>(
-    () => ({ language, ...(profile.data?.settings ?? { push: false, email: false, sms: false }) }),
-    [language, profile.data],
-  )
+  const settings = useMemo<Settings>(() => profile.data?.settings ?? { push: false, email: false, sms: false }, [profile.data])
 
   const value = useMemo(
     () => ({
@@ -101,8 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       updateUser: async (patch: ProfilePatch) => setUser(await api.updateMe(patch)),
       settings,
       setSetting: <K extends keyof Settings>(key: K, v: Settings[K]) => {
-        if (key === 'language') return setLanguage(v as Settings['language'])
-        const k = key as keyof api.ServerSettings
+        const k = key
         const flip = (on: boolean) => setUser((u) => (u ? { ...u, settings: { ...u.settings, [k]: on } } : u))
         flip(v as boolean)
         api.updateMe({ [k]: v }).catch((e) => {
@@ -111,7 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         })
       },
     }),
-    [session, sessionExpired, profile.data, profile.status, profile.error, profile.reload, settings, logout, setSession, setLanguage, setUser, toast],
+    [session, sessionExpired, profile.data, profile.status, profile.error, profile.reload, settings, logout, setSession, setUser, toast],
   )
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

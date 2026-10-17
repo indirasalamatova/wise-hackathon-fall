@@ -6,29 +6,31 @@ from datetime import date, timedelta
 from typing import List, Optional, Type, TypeVar
 from urllib.parse import quote
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlmodel import SQLModel, delete, func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth import create_access_token, get_current_user, verify_google_credential
-from app.core.database import get_session, init_db
+from app.core.database import async_session_maker, get_session, init_db
 from app.core.logging import setup_logging
+from app import explore
 from app.agents import guidelines as guideline_store
 from app.agents import journeys as journey_svc, llm as agent_llm
 from app.agents.orchestrator import run_turn
 from app.models import (
-    ChatMessage, ChatSession, CountryGuideline, Document, DocumentAnalysis, Journey, Notification, Payment,
-    PipelineRun, PrefilledForm, Task, User, utcnow,
+    ChatMessage, ChatSession, CountryGuideline, Document, DocumentAnalysis, FavoriteDestination, Journey, Notification,
+    Payment, PipelineRun, PrefilledForm, Task, User, utcnow,
 )
 from app.schemas import (
-    AuthResponse, ChatCreate, ChatRequest, DocumentOut, FormValues, GoogleAuthRequest, JourneyPatch, PaymentCreate,
+    AuthResponse, ChatCreate, ChatRequest, DocumentOut, FavoriteCreate, FormValues, GoogleAuthRequest, JourneyPatch, PaymentCreate,
     TaskCreate,
     TaskUpdate, UserOut, UserUpdate,
 )
 from app.forms import pdf as form_pdf, service as form_service, templates as form_templates
 from app.pipeline.targets import TARGETS
+from app.services import visa_matrix
 from app.services.storage import StorageService
 from sqlalchemy import text
 
@@ -46,6 +48,8 @@ SIGNATURES = {b"%PDF": "application/pdf", b"\xff\xd8\xff": "image/jpeg", b"\x89P
 async def lifespan(app: FastAPI):
     setup_logging()
     await init_db()
+    async with async_session_maker() as session:
+        await visa_matrix.ensure_loaded(session)
     await StorageService.ensure_bucket_exists()
     yield
 
@@ -150,7 +154,7 @@ async def delete_me(user: User = Depends(get_current_user), session: AsyncSessio
     chat_ids = select(ChatSession.id).where(ChatSession.user_id == user.id)
     await session.execute(delete(ChatMessage).where(ChatMessage.session_id.in_(chat_ids)))
     # Children before parents (foreign keys).
-    for model in (ChatSession, PrefilledForm, DocumentAnalysis, Document, Task, Payment, Journey, Notification):
+    for model in (ChatSession, PrefilledForm, DocumentAnalysis, Document, Task, Payment, Journey, Notification, FavoriteDestination):
         await session.execute(delete(model).where(model.user_id == user.id))
     await session.delete(user)
     await session.commit()
@@ -625,3 +629,100 @@ async def health(response: Response, session: AsyncSession = Depends(get_session
     ok = all(v == "ok" for k, v in checks.items() if k in ("database", "storage"))
     response.status_code = 200 if ok else 503
     return {"status": "ok" if ok else "degraded", "checks": checks}
+
+# --- EXPLORE (visa map) ---
+
+CODE = r"^[A-Z]{2}$"
+PURPOSE = r"^(tourism|study|work|job_search|family)$"
+
+
+async def travel_profile(session: AsyncSession, user: User, origin: Optional[str], residence: Optional[str], purpose: Optional[str]) -> dict:
+    """Passport, residence and purpose: the query overrides the profile; an empty profile falls back to the analysed passport."""
+    source = "chosen" if origin else "none"
+    if not origin and user.nationality_code:
+        origin, source = user.nationality_code, "profile"
+    if not origin:
+        analyses = (await session.exec(
+            select(DocumentAnalysis)
+            .where(DocumentAnalysis.user_id == user.id, DocumentAnalysis.status == "done", DocumentAnalysis.document_kind == "passport")
+            .order_by(DocumentAnalysis.analyzed_at.desc())
+        )).all()
+        for a in analyses:
+            if code := explore.alpha2(a.normalized.get("nationality")):
+                origin, source = code, "passport"
+                break
+    if not origin and (code := explore.alpha2(user.citizenship)):
+        origin, source = code, "citizenship"
+    # residence="" in the query means "no residence permit" even if the profile has one.
+    residence = user.residence_code if residence is None else residence
+    return {"origin": origin, "origin_source": source, "residence": residence or None, "purpose": purpose or user.travel_purpose or "tourism"}
+
+
+@app.get("/api/explore/map")
+async def explore_map(
+    origin: Optional[str] = Query(None, pattern=CODE),
+    residence: Optional[str] = Query(None, pattern=r"^([A-Z]{2})?$"),
+    purpose: Optional[str] = Query(None, pattern=PURPOSE),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    profile = await travel_profile(session, user, origin, residence, purpose)
+    o = profile["origin"]
+    matrix = await visa_matrix.for_origin(session, o) if o else {}
+    guidelines = (await session.exec(select(CountryGuideline))).all()
+    passports = await visa_matrix.passports(session)
+    countries = []
+    for code in sorted(set(passports) | set(matrix) | {g.destination_code for g in guidelines}):
+        g = explore.pick_guideline(guidelines, code, o, profile["purpose"])
+        current = bool(g) and guideline_store.freshness(g)[0] == "current"
+        d = explore.decide(code, o, profile["residence"], profile["purpose"], matrix.get(code), g, current)
+        countries.append({**d.as_dict(), "has_guideline": current})
+    return {**profile, "source": visa_matrix.SOURCE, "passports": passports, "countries": countries}
+
+
+@app.get("/api/explore/countries/{code}")
+async def explore_country(
+    code: str,
+    origin: Optional[str] = Query(None, pattern=CODE),
+    residence: Optional[str] = Query(None, pattern=r"^([A-Z]{2})?$"),
+    purpose: Optional[str] = Query(None, pattern=PURPOSE),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    code = code.upper()
+    profile = await travel_profile(session, user, origin, residence, purpose)
+    o = profile["origin"]
+    matrix = (await visa_matrix.for_origin(session, o)).get(code) if o else None
+    rows = (await session.exec(select(CountryGuideline).where(CountryGuideline.destination_code == code))).all()
+    g = explore.pick_guideline(list(rows), code, o, profile["purpose"])
+    current = bool(g) and guideline_store.freshness(g)[0] == "current"
+    d = explore.decide(code, o, profile["residence"], profile["purpose"], matrix, g, current)
+    favorite = (await session.exec(select(FavoriteDestination).where(FavoriteDestination.user_id == user.id, FavoriteDestination.country_code == code))).first()
+    return {
+        **profile,
+        "decision": d.as_dict(),
+        "guideline": explore.guideline_detail(g) if g else None,
+        "indicative": {"category": matrix.category, "stay_days": matrix.stay_days, "raw": matrix.raw} if matrix else None,
+        "source": visa_matrix.SOURCE,
+        "favorite": favorite is not None,
+    }
+
+
+@app.get("/api/explore/favorites")
+async def list_favorites(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)):
+    rows = (await session.exec(select(FavoriteDestination).where(FavoriteDestination.user_id == user.id).order_by(FavoriteDestination.created_at.desc()))).all()
+    return [r.country_code for r in rows]
+
+
+@app.post("/api/explore/favorites", status_code=204)
+async def add_favorite(payload: FavoriteCreate, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)):
+    exists = (await session.exec(select(FavoriteDestination).where(FavoriteDestination.user_id == user.id, FavoriteDestination.country_code == payload.country_code))).first()
+    if not exists:
+        session.add(FavoriteDestination(user_id=user.id, country_code=payload.country_code))
+        await session.commit()
+
+
+@app.delete("/api/explore/favorites/{code}", status_code=204)
+async def remove_favorite(code: str, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)):
+    await session.execute(delete(FavoriteDestination).where(FavoriteDestination.user_id == user.id, FavoriteDestination.country_code == code.upper()))
+    await session.commit()

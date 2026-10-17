@@ -1,3 +1,5 @@
+import { translate } from '@/i18n/core'
+
 export const API_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:8000').replace(/\/$/, '')
 
 export class ApiError extends Error {
@@ -7,8 +9,6 @@ export class ApiError extends Error {
     this.status = status
   }
 }
-
-const UNREACHABLE = 'Can’t reach the Unbound server. Check that the backend is running and try again.'
 
 let authToken: string | null = null
 let onUnauthorized: () => void = () => {}
@@ -30,9 +30,9 @@ function messageFrom(body: unknown, status: number): string {
   const detail = (body as { detail?: unknown } | null)?.detail
   if (typeof detail === 'string') return detail
   if (Array.isArray(detail) && detail[0]?.msg) return String(detail[0].msg)
-  if (status === 404) return 'That item no longer exists. Refresh the page.'
-  if (status >= 500) return 'The server hit an error. Try again in a moment.'
-  return `Request failed (${status}).`
+  if (status === 404) return translate('error.notFound')
+  if (status >= 500) return translate('error.server')
+  return translate('error.requestFailed', { status })
 }
 
 async function parse(res: Response) {
@@ -50,7 +50,7 @@ async function send(path: string, init: RequestInit): Promise<Response> {
     res = await fetch(`${API_URL}${path}`, { ...init, headers: { ...authHeaders(), ...init.headers } })
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw e
-    throw new ApiError(UNREACHABLE)
+    throw new ApiError(translate('error.unreachable'))
   }
   if (!res.ok) {
     const data = await parse(res)
@@ -88,7 +88,7 @@ export async function streamEvents<E>(path: string, body: unknown, onEvent: (e: 
     headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
     body: JSON.stringify(body),
   })
-  if (!res.body) throw new ApiError('The server didn’t stream a response.')
+  if (!res.body) throw new ApiError(translate('error.noStream'))
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader()
   let buffer = ''
   for (;;) {
@@ -120,7 +120,7 @@ export function upload<T>(path: string, form: FormData, onProgress: (pct: number
     xhr.open('POST', `${API_URL}${path}`)
     if (authToken) xhr.setRequestHeader('Authorization', `Bearer ${authToken}`)
     xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(Math.round((e.loaded / e.total) * 100))
-    xhr.onerror = () => reject(new ApiError(UNREACHABLE))
+    xhr.onerror = () => reject(new ApiError(translate('error.unreachable')))
     xhr.onload = () => {
       let data: unknown = null
       try {

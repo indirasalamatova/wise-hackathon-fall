@@ -1,0 +1,24 @@
+{
+  "name": "unbound",
+  "private": true,
+  "description": "Unbound: FastAPI backend + React frontend. Scripts wrap docker compose and the frontend package.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "setup": "node scripts/setup.mjs && npm ci --prefix frontend",
+    "dev": "docker compose up -d --build backend worker && npm run dev --prefix frontend",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "build": "npm run build --prefix frontend",
+    "lint": "npm run lint --prefix frontend",
+    "test": "docker compose exec -w /app backend python -m pytest -q tests/",
+    "check": "npm run lint && npm run build && npm test",
+    "docker:up": "docker compose --profile frontend up -d --build",
+    "docker:down": "docker compose --profile frontend down",
+    "docker:reset": "docker compose --profile frontend down -v",
+    "docker:logs": "docker compose logs -f backend worker",
+    "docker:ps": "docker compose ps",
+    "guidelines:import": "docker compose exec -w /app backend python -m app.cli.import_guidelines data/guidelines/",
+    "models:list": "docker compose exec backend python -m app.cli.list_models"
+  }
+}

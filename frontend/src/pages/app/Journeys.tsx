@@ -6,9 +6,11 @@ import { statusMeta } from '@/components/case/journey-meta'
 import { relativeDays, shortDate } from '@/lib/format'
 import type { JourneySummary } from '@/lib/types'
 import { useCase } from '@/store/context'
+import { useI18n, type Key } from '@/i18n'
 
 function JourneyCard({ j, parentTitle }: { j: JourneySummary; parentTitle?: string }) {
   const meta = statusMeta[j.status]
+  const { t } = useI18n()
   const pct = j.progress.total ? (j.progress.done / j.progress.total) * 100 : 0
   return (
     <Link to={`/app/journeys/${j.id}`} className="group block">
@@ -17,27 +19,27 @@ function JourneyCard({ j, parentTitle }: { j: JourneySummary; parentTitle?: stri
           <div className="min-w-0">
             {parentTitle && (
               <p className="mb-1 flex items-center gap-1 text-xs text-muted">
-                <CornerDownRight className="size-3" aria-hidden /> Next leg of {parentTitle}
+                <CornerDownRight className="size-3" aria-hidden /> {t('journeys.nextLegOf', { title: parentTitle })}
               </p>
             )}
             <h2 className="truncate text-[17px] font-semibold text-forest-950">{j.title}</h2>
             <p className="mt-0.5 truncate text-[13px] text-muted">
               {j.visaType}
-              {j.travelDate && ` · from ${shortDate(j.travelDate, { day: 'numeric', month: 'short', year: 'numeric' })}`}
+              {j.travelDate && ` · ${t('journeys.from', { date: shortDate(j.travelDate, { day: 'numeric', month: 'short', year: 'numeric' }) })}`}
             </p>
           </div>
-          <Badge tone={meta.tone}>{meta.label}</Badge>
+          <Badge tone={meta.tone}>{t(meta.label)}</Badge>
         </div>
-        <Progress value={pct} className="mt-5" label={`${j.title} progress`} />
+        <Progress value={pct} className="mt-5" label={t('journeys.progressOf', { title: j.title })} />
         <div className="mt-2 flex items-center justify-between gap-3 text-[13px]">
           <span className="text-muted">
-            {j.progress.done} of {j.progress.total} steps done
+            {t('journeys.stepsDone', { done: j.progress.done, total: j.progress.total })}
           </span>
           <ArrowRight className="size-4 text-muted transition-transform group-hover:translate-x-0.5" aria-hidden />
         </div>
         {j.nextStep && j.status !== 'completed' && (
           <p className="mt-3 truncate rounded-xl bg-blush px-3 py-2 text-[13px]">
-            <span className="text-muted">Next: </span>
+            <span className="text-muted">{t('journeys.next')} </span>
             <span className="font-semibold">{j.nextStep.title}</span>
             {j.nextStep.dueDate && <span className="text-muted"> · {relativeDays(j.nextStep.dueDate)}</span>}
           </p>
@@ -49,32 +51,33 @@ function JourneyCard({ j, parentTitle }: { j: JourneySummary; parentTitle?: stri
 
 export function JourneysPage() {
   const { journeys } = useCase()
+  const { t } = useI18n()
   const titles = Object.fromEntries(journeys.map((j) => [j.id, j.title]))
-  const groups: [string, JourneySummary[]][] = [
-    ['Under way', journeys.filter((j) => j.status === 'planning' || j.status === 'active')],
-    ['Completed', journeys.filter((j) => j.status === 'completed')],
-    ['Archived', journeys.filter((j) => j.status === 'archived')],
+  const groups: [Key, JourneySummary[]][] = [
+    ['journeys.underWay', journeys.filter((j) => j.status === 'planning' || j.status === 'active')],
+    ['journeyStatus.completed', journeys.filter((j) => j.status === 'completed')],
+    ['journeyStatus.archived', journeys.filter((j) => j.status === 'archived')],
   ]
 
   return (
     <>
       <PageHeader
-        title="Journeys"
-        subtitle="Each journey is a trip or move you plan with the assistant, then follow step by step. Come back to any of them later."
+        title={t('nav.journeys')}
+        subtitle={t('journeys.subtitle')}
         aside={
           <ButtonLink to="/app?new=1" variant="accent">
-            <Plus className="size-4" aria-hidden /> Plan a journey
+            <Plus className="size-4" aria-hidden /> {t('journeys.plan')}
           </ButtonLink>
         }
       />
       {journeys.length === 0 ? (
         <Card className="grid place-items-center px-6 py-16 text-center">
-          <h2 className="text-lg font-semibold">No journeys yet</h2>
+          <h2 className="text-lg font-semibold">{t('journeys.emptyTitle')}</h2>
           <p className="mt-1 max-w-md text-sm text-muted">
-            Tell the assistant where you’re going, your citizenship and why. It builds the pathway, lists the documents and costs, and shows what it can do for you.
+            {t('journeys.emptyBody')}
           </p>
           <ButtonLink to="/app?new=1" variant="accent" className="mt-6">
-            Plan your first journey
+            {t('journeys.planFirst')}
           </ButtonLink>
         </Card>
       ) : (
@@ -82,7 +85,7 @@ export function JourneysPage() {
           .filter(([, list]) => list.length)
           .map(([label, list]) => (
             <section key={label} className="mb-8">
-              <h2 className="mb-3 text-xs font-semibold tracking-[0.2em] text-forest-950/80 uppercase">{label}</h2>
+              <h2 className="mb-3 text-xs font-semibold tracking-[0.2em] text-forest-950/80 uppercase">{t(label)}</h2>
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {list.map((j) => (
                   <JourneyCard key={j.id} j={j} parentTitle={j.parentId ? titles[j.parentId] : undefined} />

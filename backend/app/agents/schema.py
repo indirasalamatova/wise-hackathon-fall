@@ -126,6 +126,9 @@ class GuidelineIn(Strict):
     origin_code: str = Field(description="ISO alpha-2 citizenship, or * for any")
     purpose: Literal["tourism", "study", "work", "job_search", "family"]
     visa_type: str
+    entry_type: Optional[Literal["visa_free", "visa_on_arrival", "evisa", "visa_required"]] = Field(
+        default=None, description="How this citizenship enters for this purpose; colours the explore map"
+    )
     summary: str
     max_stay_days: Optional[int] = None
     processing_days_min: Optional[int] = None

@@ -1,5 +1,6 @@
+
 export type CountryCode =
-  | 'HU' | 'DE' | 'NL' | 'AT' | 'PL' | 'ES' | 'FR' | 'IT' | 'CZ' | 'KZ' | 'GB'
+  | 'HU' | 'DE' | 'NL' | 'AT' | 'PL' | 'ES' | 'FR' | 'IT' | 'CZ' | 'KZ' | 'GB' | 'RU'
 
 export interface User {
   id: string
@@ -18,11 +19,28 @@ export interface User {
   monthlyBudget: number
   savings: number
   isAdmin: boolean
-  settings: Omit<Settings, 'language'>
+  /** ISO alpha-2, '' when not set. Used by the explore map. */
+  nationalityCode: string
+  residenceCode: string
+  travelPurpose: TravelPurpose
+  settings: Settings
 }
 
 export type ProfilePatch = Partial<
-  Pick<User, 'fullName' | 'citizenship' | 'passport' | 'address' | 'residenceStatus' | 'studies' | 'monthlyBudget' | 'savings'>
+  Pick<
+    User,
+    | 'fullName'
+    | 'citizenship'
+    | 'passport'
+    | 'address'
+    | 'residenceStatus'
+    | 'studies'
+    | 'monthlyBudget'
+    | 'savings'
+    | 'nationalityCode'
+    | 'residenceCode'
+    | 'travelPurpose'
+  >
 >
 
 export const documentCategories = ['Passport', 'Visa or permit', 'Insurance', 'Finances', 'Education', 'Housing', 'Other'] as const
@@ -270,9 +288,72 @@ export interface PrefilledForm {
   createdAt: string
 }
 
+/** Notification settings, saved on the server. The UI language is a device setting (see src/i18n). */
 export interface Settings {
-  language: 'EN' | 'HU' | 'RU'
   push: boolean
   email: boolean
   sms: boolean
+}
+
+/* ---------------------------------------------------------------- explore */
+
+export const travelPurposes = ['tourism', 'study', 'work', 'job_search', 'family'] as const
+export type TravelPurpose = (typeof travelPurposes)[number]
+
+export const visaStatuses = ['visa_free', 'visa_on_arrival', 'evisa', 'visa_required', 'unknown'] as const
+/** `home` is the user's own country or the country of their residence permit. */
+export type VisaStatus = (typeof visaStatuses)[number] | 'home'
+/** What decided the status: see backend/app/explore.py. */
+export type VisaBasis = 'home' | 'rule' | 'verified' | 'indicative' | 'none'
+
+export interface VisaDecision {
+  code: string
+  status: VisaStatus
+  basis: VisaBasis
+  stayDays?: number
+  /** Note keys, translated as explore.note.<key>. */
+  notes: string[]
+  hasGuideline: boolean
+}
+
+export interface DataSource {
+  title: string
+  url: string
+  asOf: string
+  licence: string
+}
+
+export interface TravelProfile {
+  origin?: string
+  originSource: 'chosen' | 'profile' | 'passport' | 'citizenship' | 'none'
+  residence?: string
+  purpose: TravelPurpose
+}
+
+export interface VisaMap extends TravelProfile {
+  source: DataSource
+  passports: string[]
+  countries: VisaDecision[]
+}
+
+export interface CountryGuidelineDetail {
+  status: 'current' | 'stale' | 'missing'
+  reason: string
+  visaType: string
+  verifiedAt?: string
+  summary?: string
+  maxStayDays?: number
+  processingDays?: [number | null, number | null]
+  requirements: { title: string; description: string; mandatory: boolean }[]
+  fees: { title: string; amount: string | null; currency: string }[]
+  officialLinks: { title: string; url: string }[]
+  sources: { title: string; url: string }[]
+}
+
+export interface CountryVisaDetail extends TravelProfile {
+  decision: VisaDecision
+  guideline?: CountryGuidelineDetail
+  indicative?: { category: string; stayDays?: number; raw: string }
+  source: DataSource
+  favorite: boolean
 }

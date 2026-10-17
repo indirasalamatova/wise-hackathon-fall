@@ -25,6 +25,9 @@ class UserOut(BaseModel):
     monthly_budget_eur: int
     savings_eur: int
     journey_stage: str
+    nationality_code: str
+    residence_code: str
+    travel_purpose: str
     notify_push: bool
     notify_email: bool
     notify_sms: bool
@@ -46,6 +49,9 @@ class UserUpdate(BaseModel):
     monthly_budget_eur: Optional[int] = Field(default=None, ge=0, le=100_000)
     savings_eur: Optional[int] = Field(default=None, ge=0, le=10_000_000)
     journey_stage: Optional[Literal["apply", "arrive", "stay", "transition"]] = None
+    nationality_code: Optional[str] = Field(default=None, pattern=r"^([A-Z]{2})?$")
+    residence_code: Optional[str] = Field(default=None, pattern=r"^([A-Z]{2})?$")
+    travel_purpose: Optional[Literal["tourism", "study", "work", "job_search", "family"]] = None
     notify_push: Optional[bool] = None
     notify_email: Optional[bool] = None
     notify_sms: Optional[bool] = None
@@ -100,3 +106,5 @@ class JourneyPatch(BaseModel):
 class FormValues(BaseModel):
     """Values the user typed or corrected; null clears a field."""
     values: dict[str, Optional[str]]
+class FavoriteCreate(BaseModel):
+    country_code: str = Field(pattern=r"^[A-Z]{2}$")

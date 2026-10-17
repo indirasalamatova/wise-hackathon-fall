@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm'
 import { ArrowRight, Check, ChevronDown, CircleAlert, History, Loader2, Plus, Square, Trash2 } from 'lucide-react'
 import { LogoMark } from '@/components/brand/Logo'
 import { Card } from '@/components/ui/primitives'
+import { useI18n } from '@/i18n'
 import * as api from '@/lib/api'
 import { suggestedQuestions } from '@/lib/mock-data'
 import { cn, timeAgo, uid } from '@/lib/format'
@@ -50,9 +51,10 @@ const markdown: Components = {
 }
 
 function Steps({ steps }: { steps: ChatStep[] }) {
+  const { t, tOr } = useI18n()
   if (!steps.length) return null
   return (
-    <ul className="mb-2 flex flex-wrap gap-1.5" aria-label="What the assistant did">
+    <ul className="mb-2 flex flex-wrap gap-1.5" aria-label={t('chat.stepsAria')}>
       {steps.map((s, i) => (
         <li
           key={i}
@@ -68,7 +70,7 @@ function Steps({ steps }: { steps: ChatStep[] }) {
           ) : (
             <Check className="size-3 text-ok-700" aria-hidden />
           )}
-          {s.label}
+          {tOr(`tool.${s.name}`, s.label)}
         </li>
       ))}
     </ul>
@@ -87,6 +89,7 @@ function History_({
   onDelete: (id: string) => void
 }) {
   const [open, setOpen] = useState(false)
+  const { t } = useI18n()
   const wrap = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open) return
@@ -103,7 +106,7 @@ function History_({
         aria-expanded={open}
         className="flex h-9 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold text-muted hover:bg-rose-100 hover:text-forest-950"
       >
-        <History className="size-4" aria-hidden /> <span className="hidden sm:inline">History</span>
+        <History className="size-4" aria-hidden /> <span className="hidden sm:inline">{t('chat.history')}</span>
         <ChevronDown className="size-3.5" aria-hidden />
       </button>
       {open && (
@@ -124,7 +127,7 @@ function History_({
               <button
                 type="button"
                 onClick={() => onDelete(s.id)}
-                aria-label={`Delete conversation ${s.title}`}
+                aria-label={t('chat.deleteConversation', { title: s.title })}
                 className="mr-2 grid size-8 shrink-0 place-items-center rounded-full text-muted opacity-0 group-hover:opacity-100 hover:bg-rose-100 hover:text-brick-600 focus:opacity-100"
               >
                 <Trash2 className="size-4" />
@@ -150,6 +153,7 @@ export function Chat({
   const { user } = useAuth()
   const { refresh, journeys } = useCase()
   const { toast } = useToast()
+  const { t, locale } = useI18n()
   const [current, setCurrent] = usePersistentState<string | null>('chat-current', null)
   const [sessions, setSessions] = useState<ChatSessionInfo[]>([])
   // Messages are tagged with the conversation they belong to, so switching shows nothing stale.
@@ -254,7 +258,7 @@ export function Chat({
       )
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {
-        const message = err instanceof Error ? err.message : 'The assistant didn’t answer. Try again.'
+        const message = err instanceof Error ? err.message : t('chat.noAnswer')
         setMessages((ms) => (ms.length && ms[ms.length - 1].role === 'assistant' ? ms : [...ms, { id: uid('a'), role: 'assistant', text: '', steps: [] }]))
         updateLast((m) => ({ ...m, error: message }))
       }
@@ -266,7 +270,7 @@ export function Chat({
     }
   }
 
-  const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  const today = new Date().toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
   return (
     <Card className="flex min-h-[560px] flex-col overflow-hidden lg:h-[calc(100svh-76px-4rem)]">
@@ -275,13 +279,13 @@ export function Chat({
           <LogoMark className="size-7" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="font-semibold">Unbound assistant</p>
+          <p className="font-semibold">{t('chat.title')}</p>
           {chatJourney ? (
             <Link to={`/app/journeys/${chatJourney.id}`} className="block truncate text-[13px] font-semibold text-brick-700 underline underline-offset-2">
-              About: {chatJourney.title}
+              {t('chat.about', { title: chatJourney.title })}
             </Link>
           ) : (
-            <p className="truncate text-[13px] text-muted">Plans journeys, checks documents, prefills forms</p>
+            <p className="truncate text-[13px] text-muted">{t('chat.subtitle')}</p>
           )}
         </div>
         <History_
@@ -294,7 +298,7 @@ export function Chat({
               if (id === current) setCurrent(null)
               loadSessions()
             } catch (e) {
-              toast(e instanceof Error ? e.message : 'Conversation wasn’t deleted.', 'error')
+              toast(e instanceof Error ? e.message : t('chat.deleteFailed'), 'error')
             }
           }}
         />
@@ -305,7 +309,7 @@ export function Chat({
             disabled={busy}
             className="flex h-9 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold text-muted hover:bg-rose-100 hover:text-forest-950 disabled:opacity-50"
           >
-            <Plus className="size-4" aria-hidden /> <span className="hidden sm:inline">New</span>
+            <Plus className="size-4" aria-hidden /> <span className="hidden sm:inline">{t('chat.new')}</span>
           </button>
         )}
       </div>
@@ -313,19 +317,19 @@ export function Chat({
       <div ref={scroller} className="flex-1 overflow-y-auto px-5 py-6 sm:px-9">
         {loading ? (
           <p className="flex items-center gap-2 text-sm text-muted" role="status">
-            <Loader2 className="size-4 animate-spin" aria-hidden /> Loading conversation…
+            <Loader2 className="size-4 animate-spin" aria-hidden /> {t('chat.loading')}
           </p>
         ) : messages.length === 0 ? (
           <div className="mx-auto max-w-[560px] py-4">
             <p className="text-xs font-semibold tracking-[0.25em] text-brick-600 uppercase">{today}</p>
             <h1 className="font-display mt-4 text-[26px] leading-tight font-semibold text-forest-950 sm:text-[28px]">
-              Hi {user?.firstName}, where are you heading?
+              {t('chat.greeting', { name: user?.firstName ?? '' })}
             </h1>
             <p className="mt-6 text-[15px] text-muted">
-              Tell me where you want to go, your citizenship and why. I’ll check your documents, list what’s missing with the fees, and turn it into a to-do plan.
+              {t('chat.intro')}
             </p>
             <div className="mt-6 grid gap-3 sm:grid-cols-2">
-              {suggestedQuestions.map((q) => (
+              {suggestedQuestions.map((key) => t(key)).map((q) => (
                 <button
                   key={q}
                   type="button"
@@ -353,7 +357,7 @@ export function Chat({
                       {m.text}
                     </Markdown>
                   ) : (
-                    m.streaming && !m.steps.some((s) => s.state === 'start') && <p className="text-[13px] text-muted italic">Thinking…</p>
+                    m.streaming && !m.steps.some((s) => s.state === 'start') && <p className="text-[13px] text-muted italic">{t('chat.thinking')}</p>
                   )}
                   {m.error && (
                     <p role="alert" className="mt-2 flex items-start gap-2 text-sm text-brick-700">
@@ -376,7 +380,7 @@ export function Chat({
       >
         <div className="flex items-end gap-3">
           <label htmlFor="ask" className="sr-only">
-            Ask the assistant
+            {t('chat.askLabel')}
           </label>
           <textarea
             id="ask"
@@ -389,7 +393,7 @@ export function Chat({
                 ask(draft)
               }
             }}
-            placeholder="e.g. I’m Russian and want to visit Hungary in December"
+            placeholder={t('chat.placeholder')}
             maxLength={2000}
             className="max-h-40 min-h-12 min-w-0 flex-1 resize-none rounded-2xl border border-rose-200 bg-blush px-4 py-3 text-[15px] placeholder:text-muted outline-none [field-sizing:content] focus:border-forest-950 focus-visible:outline-none"
           />
@@ -397,7 +401,7 @@ export function Chat({
             <button
               type="button"
               onClick={() => abort.current?.abort()}
-              aria-label="Stop"
+              aria-label={t('chat.stop')}
               className="grid size-12 shrink-0 place-items-center rounded-2xl bg-forest-950 text-white hover:bg-forest-700"
             >
               <Square className="size-4 fill-current" />
@@ -406,14 +410,14 @@ export function Chat({
             <button
               type="submit"
               disabled={!draft.trim()}
-              aria-label="Send"
+              aria-label={t('chat.send')}
               className="grid size-12 shrink-0 place-items-center rounded-2xl bg-brick-600 text-white transition-colors hover:bg-brick-700 disabled:opacity-50"
             >
               <ArrowRight className="size-5" />
             </button>
           )}
         </div>
-        <p className="mt-2 text-xs text-muted">Guidance only, not legal advice. Rules come from Unbound’s verified country guidelines.</p>
+        <p className="mt-2 text-xs text-muted">{t('chat.footer')}</p>
       </form>
     </Card>
   )

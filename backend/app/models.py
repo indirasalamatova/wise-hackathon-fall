@@ -34,6 +34,10 @@ class User(SQLModel, table=True):
     monthly_budget_eur: int = 1000
     savings_eur: int = 0
     journey_stage: str = "apply"  # apply, arrive, stay, transition
+    # Structured travel profile for the explore map (ISO 3166-1 alpha-2, "" = not set)
+    nationality_code: str = ""
+    residence_code: str = ""  # country of the user's residence permit
+    travel_purpose: str = "tourism"  # tourism, study, work, job_search, family
 
     notify_push: bool = True
     notify_email: bool = True
@@ -124,6 +128,8 @@ class CountryGuideline(SQLModel, table=True):
     origin_code: str = Field(index=True)  # ISO alpha-2, or "*" for any citizenship
     purpose: str  # tourism, study, work, job_search, family
     visa_type: str
+    # visa_free, visa_on_arrival, evisa, visa_required; drives the explore map colour
+    entry_type: Optional[str] = None
     summary: str
     max_stay_days: Optional[int] = None
     processing_days_min: Optional[int] = None
@@ -261,3 +267,29 @@ class PipelineRun(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
     results: list = json_col()  # one entry per target
     log: list = json_col()
+class VisaRequirement(SQLModel, table=True):
+    """
+    Indicative short-stay entry rules per passport, imported from an open dataset
+    (app/services/visa_matrix.py). Shown on the explore map with their source and date;
+    verified country_guidelines take precedence over them.
+    """
+    __tablename__ = "visa_requirements"
+    __table_args__ = (UniqueConstraint("origin_code", "destination_code"),)
+
+    id: str = Field(default_factory=new_id, primary_key=True)
+    origin_code: str = Field(index=True)  # passport, ISO alpha-2
+    destination_code: str = Field(index=True)
+    category: str  # visa_free, visa_on_arrival, evisa, eta, visa_required, no_admission
+    stay_days: Optional[int] = None
+    raw: str  # the dataset value as published
+    imported_at: datetime = Field(default_factory=utcnow)
+
+
+class FavoriteDestination(SQLModel, table=True):
+    __tablename__ = "favorite_destinations"
+    __table_args__ = (UniqueConstraint("user_id", "country_code"),)
+
+    id: str = Field(default_factory=new_id, primary_key=True)
+    user_id: str = Field(foreign_key="users.id", index=True)
+    country_code: str
+    created_at: datetime = Field(default_factory=utcnow)

@@ -3,6 +3,7 @@ import { FileImage, FileText, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/primitives'
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
+import { useI18n } from '@/i18n'
 import { fileSize, shortDate } from '@/lib/format'
 import type { CaseDocument } from '@/lib/types'
 import { useCase, useToast } from '@/store/context'
@@ -15,6 +16,7 @@ export function DocumentList({ documents, compact = false }: { documents: CaseDo
   const { toast } = useToast()
   const [confirm, setConfirm] = useState<CaseDocument | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const { t } = useI18n()
 
   return (
     <>
@@ -30,19 +32,22 @@ export function DocumentList({ documents, compact = false }: { documents: CaseDo
               <div className="min-w-0 flex-1 basis-40">
                 <p className="truncate text-sm font-semibold text-forest-950">{d.title}</p>
                 <p className="truncate text-xs text-muted">
-                  {d.category} · {compact ? shortDate(d.uploadedAt.slice(0, 10)) : `${d.fileName} · ${fileSize(d.size)} · uploaded ${shortDate(d.uploadedAt.slice(0, 10), { day: 'numeric', month: 'short', year: 'numeric' })}`}
+                  {t(`docCategory.${d.category}`)} ·{' '}
+                  {compact
+                    ? shortDate(d.uploadedAt.slice(0, 10))
+                    : `${d.fileName} · ${fileSize(d.size)} · ${t('docs.uploaded', { date: shortDate(d.uploadedAt.slice(0, 10), { day: 'numeric', month: 'short', year: 'numeric' }) })}`}
                 </p>
                 {!compact && <AnalysisPanel doc={d} />}
               </div>
               {expiry.state !== 'none' && <Badge tone={expiry.tone}>{expiry.label}</Badge>}
               <Button variant="outline" size="sm" onClick={() => openDocument(d)}>
-                Open
+                {t('common.open')}
               </Button>
               {!compact && (
                 <button
                   type="button"
                   onClick={() => setConfirm(d)}
-                  aria-label={`Delete ${d.title}`}
+                  aria-label={t('docs.deleteAria', { title: d.title })}
                   className="grid size-8 shrink-0 place-items-center rounded-full text-forest-950/70 hover:bg-rose-100 hover:text-brick-600"
                 >
                   <Trash2 className="size-[17px]" />
@@ -56,12 +61,12 @@ export function DocumentList({ documents, compact = false }: { documents: CaseDo
       <Dialog
         open={!!confirm}
         onClose={() => !deleting && setConfirm(null)}
-        title={`Delete ${confirm?.title ?? 'document'}?`}
-        description="The file is removed from storage. This can’t be undone."
+        title={t('docs.deleteTitle', { title: confirm?.title ?? t('docs.deleteDocument') })}
+        description={t('docs.deleteBody')}
       >
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={() => setConfirm(null)} disabled={deleting}>
-            Keep it
+            {t('docs.keep')}
           </Button>
           <Button
             variant="accent"
@@ -71,16 +76,16 @@ export function DocumentList({ documents, compact = false }: { documents: CaseDo
               setDeleting(true)
               try {
                 await deleteDocument(confirm.id)
-                toast(`${confirm.title} deleted`)
+                toast(t('docs.deleted', { title: confirm.title }))
                 setConfirm(null)
               } catch (e) {
-                toast(e instanceof Error ? e.message : 'Delete failed. Try again.', 'error')
+                toast(e instanceof Error ? e.message : t('docs.deleteFailed'), 'error')
               } finally {
                 setDeleting(false)
               }
             }}
           >
-            Delete
+            {t('common.delete')}
           </Button>
         </div>
       </Dialog>

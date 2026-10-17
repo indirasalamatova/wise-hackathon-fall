@@ -45,6 +45,7 @@ and the API only returns rows owned by the caller.
 | Journeys | `GET /api/journeys`, `GET/PATCH/DELETE /api/journeys/{id}`, `POST /api/journeys/{id}/forms/{form_key}`, `POST /api/journeys/{id}/fees/{fee_key}/pay`, `GET /api/journeys/{id}/calendar.ics` |
 | Document analysis, forms | `POST /api/documents/{id}/analyze`, `GET/PATCH/DELETE /api/forms/{id}`, `GET /api/forms/{id}/official.pdf`, `GET /api/forms/{id}/datasheet.pdf`, `GET /api/guidelines/coverage` |
 | Data sources (admins) | `GET /api/admin/pipeline`, `POST /api/admin/pipeline/runs` |
+| Explore (3D visa map) | `GET /api/explore/map`, `GET /api/explore/countries/{code}`, `GET/POST/DELETE /api/explore/favorites` |
 
 Uploads: PDF, JPG or PNG up to 10 MB, checked by file contents, not the name. Re-uploading the same
 file is refused. Documents with an expiry date within 60 days create a notification.
@@ -73,4 +74,6 @@ src/
 ```
 
 Routes: `/`, `/login`, `/signup`, `/app` (assistant), `/app/journey`, `/app/documents`,
-`/app/finances`, `/app/finances/costs`, `/app/todo`, `/app/profile`.
+`/app/finances`, `/app/finances/costs`, `/app/todo`, `/app/profile`, `/app/explore` (also `/explore`).
+The explore globe (`react-globe.gl`, three.js) is code-split and loads only on that page; country
+shapes are `public/geo/countries-110m.json` (Natural Earth, public domain).

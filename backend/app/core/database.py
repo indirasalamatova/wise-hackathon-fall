@@ -51,6 +51,10 @@ MIGRATIONS = [
     "ALTER TABLE country_guidelines ADD COLUMN IF NOT EXISTS managed_by VARCHAR NOT NULL DEFAULT 'manual'",
     "ALTER TABLE country_guidelines ADD COLUMN IF NOT EXISTS source_hash VARCHAR",
     "ALTER TABLE country_guidelines ADD COLUMN IF NOT EXISTS checked_at TIMESTAMP WITH TIME ZONE",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS nationality_code VARCHAR NOT NULL DEFAULT ''",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS residence_code VARCHAR NOT NULL DEFAULT ''",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS travel_purpose VARCHAR NOT NULL DEFAULT 'tourism'",
+    "ALTER TABLE country_guidelines ADD COLUMN IF NOT EXISTS entry_type VARCHAR",
 ]
 
 

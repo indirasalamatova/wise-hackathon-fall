@@ -12,10 +12,12 @@ import * as api from '@/lib/api'
 import { cn, relativeDays, shortDate } from '@/lib/format'
 import { documentCategories, type AutomationAction, type DocumentCategory, type JourneyDetail, type JourneyStatus } from '@/lib/types'
 import { useCase, useToast } from '@/store/context'
+import { useI18n } from '@/i18n'
+import { currentLocale, translate } from '@/i18n/core'
 import { purposeLabel, statusMeta } from '@/components/case/journey-meta'
 
 const fmt = (amount: string, currency: string) =>
-  new Intl.NumberFormat('en-IE', { style: 'currency', currency, maximumFractionDigits: 2 }).format(Number(amount))
+  new Intl.NumberFormat(currentLocale(), { style: 'currency', currency, maximumFractionDigits: 2 }).format(Number(amount))
 const totals = (t: Record<string, string>) => {
   const e = Object.entries(t)
   return e.length ? e.map(([c, a]) => fmt(a, c)).join(' + ') : '—'
@@ -30,12 +32,13 @@ function Dates({ j, onSave }: { j: JourneyDetail; onSave: (p: { travel_date: str
   const [travel, setTravel] = useState(j.travelDate ?? '')
   const [stay, setStay] = useState(j.stayDays ? String(j.stayDays) : '')
   const [saving, setSaving] = useState(false)
+  const { t } = useI18n()
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} className="text-[13px] font-semibold underline underline-offset-2">
-        {j.travelDate ? 'Change dates' : 'Add travel dates'}
+        {j.travelDate ? t('jd.changeDates') : t('jd.addDates')}
       </button>
-      <Dialog open={open} onClose={() => !saving && setOpen(false)} title="Travel dates" description="Due dates of open steps are recalculated.">
+      <Dialog open={open} onClose={() => !saving && setOpen(false)} title={t('jd.datesTitle')} description={t('jd.datesHelp')}>
         <form
           className="flex flex-col gap-4"
           onSubmit={async (e) => {
@@ -50,19 +53,19 @@ function Dates({ j, onSave }: { j: JourneyDetail; onSave: (p: { travel_date: str
           }}
         >
           <label className="flex flex-col gap-1.5 text-sm font-semibold">
-            Arrival
+            {t('jd.arrival')}
             <Input type="date" value={travel} min={new Date().toISOString().slice(0, 10)} onChange={(e) => setTravel(e.target.value)} />
           </label>
           <label className="flex flex-col gap-1.5 text-sm font-semibold">
-            Length of stay (days)
+            {t('jd.stayDays')}
             <Input type="number" min={1} max={3650} value={stay} onChange={(e) => setStay(e.target.value)} />
           </label>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button type="submit" loading={saving}>
-              Save dates
+              {t('jd.saveDates')}
             </Button>
           </div>
         </form>
@@ -82,8 +85,9 @@ export function JourneyDetailPage() {
   const [paying, setPaying] = useState<AutomationAction | null>(null)
   const [uploading, setUploading] = useState<{ category: DocumentCategory; title: string } | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const { t } = useI18n()
 
-  const load = useCallback(() => api.getJourney(id).then(setJ, (e) => setError(e instanceof Error ? e.message : 'Journey not found.')), [id])
+  const load = useCallback(() => api.getJourney(id).then(setJ, (e) => setError(e instanceof Error ? e.message : translate('jd.notFound'))), [id])
   useEffect(() => {
     load()
   }, [load])
@@ -96,7 +100,7 @@ export function JourneyDetailPage() {
       refresh(['journeys', 'tasks', 'forms', 'payments'])
       if (done) toast(done, 'success')
     } catch (e) {
-      toast(e instanceof Error ? e.message : 'That didn’t work. Try again.', 'error')
+      toast(e instanceof Error ? e.message : t('error.generic'), 'error')
     } finally {
       setBusy(null)
     }
@@ -106,7 +110,7 @@ export function JourneyDetailPage() {
   if (!j)
     return (
       <p className="flex items-center gap-2 text-sm text-muted" role="status">
-        <Loader2 className="size-4 animate-spin" aria-hidden /> Loading journey…
+        <Loader2 className="size-4 animate-spin" aria-hidden /> {t('jd.loading')}
       </p>
     )
 
@@ -126,7 +130,7 @@ export function JourneyDetailPage() {
         refresh(['forms'])
         navigate(`/app/forms/${form.id}`)
       } catch (e) {
-        toast(e instanceof Error ? e.message : 'The form couldn’t be prefilled.', 'error')
+        toast(e instanceof Error ? e.message : t('jd.prefillFailed'), 'error')
         setBusy(null)
       }
     } else if (a.kind === 'pay') setPaying(a)
@@ -138,7 +142,7 @@ export function JourneyDetailPage() {
         link.download = `${j.title}.ics`
         link.click()
         setTimeout(() => URL.revokeObjectURL(url), 10_000)
-      }, 'Calendar file downloaded')
+      }, t('jd.calendarDone'))
     else if (a.kind === 'email') window.location.assign(`mailto:?subject=${encodeURIComponent(a.subject ?? '')}&body=${encodeURIComponent(a.body ?? '')}`)
     else if (a.kind === 'upload') {
       const category = (documentCategories as readonly string[]).includes(a.category ?? '') ? (a.category as DocumentCategory) : 'Other'
@@ -150,33 +154,33 @@ export function JourneyDetailPage() {
   return (
     <>
       <Link to="/app/journeys" className="mb-4 inline-flex items-center gap-1.5 text-sm font-semibold text-muted hover:text-forest-950">
-        <ArrowLeft className="size-4" aria-hidden /> Journeys
+        <ArrowLeft className="size-4" aria-hidden /> {t('nav.journeys')}
       </Link>
       <PageHeader
-        eyebrow={`${meta.label} · ${purposeLabel(j.purpose)}`}
+        eyebrow={`${t(meta.label)} · ${purposeLabel(j.purpose)}`}
         title={j.title}
         subtitle={[
           j.visaType,
-          j.travelDate ? `${day(j.travelDate)}${j.tripEnd ? ` – ${day(j.tripEnd)}` : ''}` : 'No travel date yet',
+          j.travelDate ? `${day(j.travelDate)}${j.tripEnd ? ` – ${day(j.tripEnd)}` : ''}` : t('jd.noDate'),
         ].join(' · ')}
         aside={
           <div className="flex flex-wrap gap-2">
             <Button variant="accent" onClick={() => ask()}>
-              <MessageSquareText className="size-4" aria-hidden /> Ask about this journey
+              <MessageSquareText className="size-4" aria-hidden /> {t('jd.ask')}
             </Button>
             {j.status === 'planning' && (
-              <Button variant="outline" loading={busy === 'status:active'} onClick={() => setStatus('active', 'Journey started')}>
-                Start journey
+              <Button variant="outline" loading={busy === 'status:active'} onClick={() => setStatus('active', t('jd.started'))}>
+                {t('jd.start')}
               </Button>
             )}
             {j.status === 'active' && (
-              <Button variant="outline" loading={busy === 'status:completed'} onClick={() => setStatus('completed', 'Journey completed')}>
-                Mark complete
+              <Button variant="outline" loading={busy === 'status:completed'} onClick={() => setStatus('completed', t('jd.completed'))}>
+                {t('jd.markComplete')}
               </Button>
             )}
             {(j.status === 'completed' || j.status === 'archived') && (
-              <Button variant="outline" loading={busy === 'status:active'} onClick={() => setStatus('active', 'Journey reopened')}>
-                Reopen
+              <Button variant="outline" loading={busy === 'status:active'} onClick={() => setStatus('active', t('jd.reopened'))}>
+                {t('jd.reopen')}
               </Button>
             )}
           </div>
@@ -185,21 +189,22 @@ export function JourneyDetailPage() {
 
       {j.parent && (
         <p className="-mt-3 mb-4 flex items-center gap-1.5 text-sm text-muted">
-          <CornerDownRight className="size-4" aria-hidden /> Continues <Link to={`/app/journeys/${j.parent.id}`} className="font-semibold text-forest-950 underline underline-offset-2">{j.parent.title}</Link>
+          <CornerDownRight className="size-4" aria-hidden /> {t('jd.continues')} <Link to={`/app/journeys/${j.parent.id}`} className="font-semibold text-forest-950 underline underline-offset-2">{j.parent.title}</Link>
         </p>
       )}
       {j.guideline.status !== 'current' && (
         <p className="mb-4 rounded-xl bg-warn-100 px-4 py-3 text-sm text-warn-700">
-          Official information about {j.destinationName} is being updated. Requirements and fees below are from{' '}
-          {j.guideline.verifiedAt ? `the last check on ${day(j.guideline.verifiedAt)}` : 'an earlier version'}; check them again before you apply.
+          {j.guideline.verifiedAt
+            ? t('jd.staleChecked', { country: j.destinationName, date: day(j.guideline.verifiedAt) })
+            : t('jd.staleEarlier', { country: j.destinationName })}
         </p>
       )}
       {allDone && j.status !== 'completed' && (
         <Card tone="dark" className="mb-4 flex flex-wrap items-center justify-between gap-3 px-6 py-4">
-          <p className="text-sm">Every step is done. Mark the journey complete, or continue with a next leg.</p>
+          <p className="text-sm">{t('jd.allDone')}</p>
           <div className="flex gap-2">
-            <Button variant="accent" size="sm" onClick={() => setStatus('completed', 'Journey completed')}>
-              Mark complete
+            <Button variant="accent" size="sm" onClick={() => setStatus('completed', t('jd.completed'))}>
+              {t('jd.markComplete')}
             </Button>
           </div>
         </Card>
@@ -209,16 +214,16 @@ export function JourneyDetailPage() {
         <div className="flex flex-col gap-4">
           <Card className="p-6">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <CardTitle>Pathway</CardTitle>
+              <CardTitle>{t('jd.pathway')}</CardTitle>
               <span className="flex items-center gap-3 text-sm text-muted">
-                {j.progress.done} of {j.progress.total} done
+                {t('jd.progress', { done: j.progress.done, total: j.progress.total })}
                 <Dates
                   j={j}
-                  onSave={(p) => act('dates', () => api.updateJourney(j.id, p), 'Dates saved; due dates updated')}
+                  onSave={(p) => act('dates', () => api.updateJourney(j.id, p), t('jd.datesSaved'))}
                 />
               </span>
             </div>
-            <Progress value={pct} className="mt-4 mb-2" label="Journey progress" />
+            <Progress value={pct} className="mt-4 mb-2" label={t('jd.progressLabel')} />
             <ol className="divide-y divide-rose-200">
               {j.steps.map((s) => (
                 <li key={s.id} className="flex items-start gap-3.5 py-3">
@@ -247,21 +252,21 @@ export function JourneyDetailPage() {
           </Card>
 
           <Card className="p-6">
-            <CardTitle>Documents needed</CardTitle>
+            <CardTitle>{t('jd.documents')}</CardTitle>
             <ul className="mt-4 flex flex-col gap-3">
               {j.requirements.map((r) => {
                 const Icon = reqIcon[r.status]
                 return (
                   <li key={r.key} className="flex items-start gap-3">
                     <span className={cn('mt-0.5 grid size-5 shrink-0 place-items-center rounded-full', reqColor[r.status])}>
-                      <Icon className="size-3" strokeWidth={3} aria-label={r.status} />
+                      <Icon className="size-3" strokeWidth={3} aria-label={t(`jd.req.${r.status}`)} />
                     </span>
                     <div className="min-w-0 flex-1 text-sm">
                       <p className={cn(r.status !== 'satisfied' && 'font-semibold')}>
                         {r.title}
-                        {!r.mandatory && <span className="font-normal text-muted"> · optional</span>}
+                        {!r.mandatory && <span className="font-normal text-muted"> · {t('jd.optional')}</span>}
                       </p>
-                      {r.status === 'satisfied' && r.matched_document && <p className="text-xs text-muted">On file: {r.matched_document}</p>}
+                      {r.status === 'satisfied' && r.matched_document && <p className="text-xs text-muted">{t('jd.onFile', { name: r.matched_document })}</p>}
                       {r.problems.flatMap((p) => p.problems).map((p, i) => (
                         <p key={i} className="text-xs text-brick-700">
                           {p}
@@ -269,38 +274,38 @@ export function JourneyDetailPage() {
                       ))}
                     </div>
                     {r.source_url && (
-                      <a href={r.source_url} target="_blank" rel="noreferrer" className="shrink-0 text-xs text-muted underline underline-offset-2 hover:text-forest-950" title="Official source">
-                        Source
+                      <a href={r.source_url} target="_blank" rel="noreferrer" className="shrink-0 text-xs text-muted underline underline-offset-2 hover:text-forest-950" title={t('jd.officialSource')}>
+                        {t('jd.source')}
                       </a>
                     )}
                   </li>
                 )
               })}
-              {j.requirements.length === 0 && <p className="text-sm text-muted">No requirement information yet.</p>}
+              {j.requirements.length === 0 && <p className="text-sm text-muted">{t('jd.noRequirements')}</p>}
             </ul>
           </Card>
         </div>
 
         <aside className="flex flex-col gap-4">
           <Card className="p-6">
-            <CardTitle>Money</CardTitle>
+            <CardTitle>{t('jd.money')}</CardTitle>
             <dl className="mt-4 grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-2 text-sm">
-              <dt className="text-muted">Official fees</dt>
+              <dt className="text-muted">{t('jd.officialFees')}</dt>
               <dd className="text-right font-semibold">{totals(f.fees.mandatory_totals)}</dd>
-              <dt className="text-muted">Paid</dt>
+              <dt className="text-muted">{t('jd.paid')}</dt>
               <dd className="text-right font-semibold">{totals(f.paid)}</dd>
-              <dt className="text-muted">Still to pay</dt>
+              <dt className="text-muted">{t('jd.remaining')}</dt>
               <dd className="text-right font-semibold">{totals(f.remaining)}</dd>
               {f.living_budget_eur && (
                 <>
-                  <dt className="text-muted">Living costs ({f.stay_months} mo at your budget)</dt>
+                  <dt className="text-muted">{t('jd.living', { count: f.stay_months ?? 0 })}</dt>
                   <dd className="text-right font-semibold">{fmt(f.living_budget_eur, 'EUR')}</dd>
                 </>
               )}
             </dl>
             {Object.keys(f.fees.mandatory_totals).length === 0 && f.fees.items.some((x) => x.amount) && (
               <div className="mt-3 rounded-xl bg-blush px-3.5 py-2.5 text-xs">
-                <p className="font-semibold">You pay one of these, depending on how you apply:</p>
+                <p className="font-semibold">{t('jd.payOneOf')}</p>
                 <ul className="mt-1 flex flex-col gap-0.5">
                   {f.fees.items
                     .filter((x) => x.amount)
@@ -314,25 +319,25 @@ export function JourneyDetailPage() {
               </div>
             )}
             {f.fees.amounts_not_fixed.length > 0 && (
-              <p className="mt-2 text-xs text-muted">Plus {f.fees.amounts_not_fixed.join(', ').toLowerCase()} (amount varies)</p>
+              <p className="mt-2 text-xs text-muted">{t('jd.plusVarying', { items: f.fees.amounts_not_fixed.join(', ').toLowerCase() })}</p>
             )}
             {f.proof_of_funds && (
               <p className={cn('mt-3 rounded-xl px-3.5 py-2.5 text-xs', f.proof_of_funds.covered ? 'bg-ok-100 text-ok-700' : 'bg-warn-100 text-warn-700')}>
-                {f.proof_of_funds.requirement}: {fmt(f.proof_of_funds.required, f.proof_of_funds.currency)} required.{' '}
+                {t('jd.fundsRequired', { requirement: f.proof_of_funds.requirement, amount: fmt(f.proof_of_funds.required, f.proof_of_funds.currency) })}{' '}
                 {f.proof_of_funds.covered === null
-                  ? 'Compare with your savings in that currency.'
+                  ? t('jd.fundsCompare')
                   : f.proof_of_funds.covered
-                    ? 'Your savings cover it.'
-                    : `Your savings are short by ${fmt(f.proof_of_funds.short_by ?? '0', 'EUR')}.`}
+                    ? t('jd.fundsCovered')
+                    : t('jd.fundsShort', { amount: fmt(f.proof_of_funds.short_by ?? '0', 'EUR') })}
               </p>
             )}
             <Link to="/app/finances" className="mt-3 inline-block text-[13px] font-semibold underline underline-offset-2">
-              Update budget and savings
+              {t('jd.updateBudget')}
             </Link>
           </Card>
 
           <Card className="p-6">
-            <CardTitle>Unbound can do this for you</CardTitle>
+            <CardTitle>{t('jd.automation')}</CardTitle>
             <ul className="mt-3 flex flex-col gap-1">
               {j.automation.map((a) => {
                 const Icon = actionIcon[a.kind]
@@ -351,23 +356,23 @@ export function JourneyDetailPage() {
                         <span className="block font-semibold">{a.title}</span>
                         {a.kind === 'pay' && a.amount && (
                           <span className="text-xs text-muted">
-                            {a.done ? 'Paid' : fmt(a.amount, a.currency ?? 'EUR')}
+                            {a.done ? t('jd.paid') : fmt(a.amount, a.currency ?? 'EUR')}
                             {!a.done && a.note && ` · ${a.note.replace(/^For /, '').replace(/^./, (c) => c.toLowerCase())}`}
                           </span>
                         )}
-                        {a.kind === 'prefill' && a.done && <span className="text-xs text-muted">Open the prefilled form</span>}
-                        {a.kind === 'email' && <span className="text-xs text-muted">Opens a drafted email</span>}
+                        {a.kind === 'prefill' && a.done && <span className="text-xs text-muted">{t('jd.openForm')}</span>}
+                        {a.kind === 'email' && <span className="text-xs text-muted">{t('jd.draftEmail')}</span>}
                       </span>
                     </button>
                   </li>
                 )
               })}
-              {j.automation.length === 0 && <p className="text-sm text-muted">Nothing to automate yet.</p>}
+              {j.automation.length === 0 && <p className="text-sm text-muted">{t('jd.nothingToAutomate')}</p>}
             </ul>
           </Card>
 
           <Card className="p-6">
-            <CardTitle>Conversations</CardTitle>
+            <CardTitle>{t('jd.conversations')}</CardTitle>
             <ul className="mt-3 flex flex-col gap-1">
               {j.chats.map((c) => (
                 <li key={c.id}>
@@ -378,12 +383,12 @@ export function JourneyDetailPage() {
               ))}
             </ul>
             <button type="button" onClick={() => ask()} className="mt-2 text-[13px] font-semibold underline underline-offset-2">
-              Start a new conversation
+              {t('jd.newConversation')}
             </button>
           </Card>
 
           <Card className="p-6">
-            <CardTitle>What next?</CardTitle>
+            <CardTitle>{t('jd.whatNext')}</CardTitle>
             {j.continuations.length > 0 && (
               <ul className="mt-3 flex flex-col gap-1">
                 {j.continuations.map((c) => (
@@ -395,25 +400,25 @@ export function JourneyDetailPage() {
                 ))}
               </ul>
             )}
-            <p className="mt-2 text-[13px] text-muted">Moving on, extending your stay, or going somewhere new? Plan the next leg from here.</p>
-            <Button variant="outline" size="sm" className="mt-3" onClick={() => ask(`I want to plan the next leg after “${j.title}”.`)}>
-              Continue this journey
+            <p className="mt-2 text-[13px] text-muted">{t('jd.nextLegHelp')}</p>
+            <Button variant="outline" size="sm" className="mt-3" onClick={() => ask(t('jd.nextLegPrompt', { title: j.title }))}>
+              {t('jd.continue')}
             </Button>
             <div className="mt-5 flex flex-wrap gap-4 border-t border-rose-200 pt-4 text-[13px]">
               {j.status !== 'archived' && (
-                <button type="button" onClick={() => setStatus('archived', 'Journey archived')} className="text-muted underline underline-offset-2 hover:text-forest-950">
-                  Archive
+                <button type="button" onClick={() => setStatus('archived', t('jd.archived'))} className="text-muted underline underline-offset-2 hover:text-forest-950">
+                  {t('jd.archive')}
                 </button>
               )}
               <button type="button" onClick={() => setConfirmDelete(true)} className="text-muted underline underline-offset-2 hover:text-brick-700">
-                Delete
+                {t('common.delete')}
               </button>
             </div>
           </Card>
 
           {j.guideline.sources.length > 0 && (
             <div className="px-2 text-xs text-muted">
-              <p className="font-semibold">Official sources</p>
+              <p className="font-semibold">{t('jd.sources')}</p>
               <ul className="mt-1 flex flex-col gap-1">
                 {j.guideline.sources.map((s) => (
                   <li key={s.url}>
@@ -423,7 +428,7 @@ export function JourneyDetailPage() {
                   </li>
                 ))}
               </ul>
-              {j.guideline.verifiedAt && <p className="mt-1">Checked {day(j.guideline.verifiedAt)}</p>}
+              {j.guideline.verifiedAt && <p className="mt-1">{t('jd.checked', { date: day(j.guideline.verifiedAt) })}</p>}
             </div>
           )}
         </aside>
@@ -454,10 +459,10 @@ export function JourneyDetailPage() {
           }}
         />
       )}
-      <Dialog open={confirmDelete} onClose={() => setConfirmDelete(false)} title={`Delete ${j.title}?`} description="The pathway is deleted. Conversations, forms and payments are kept.">
+      <Dialog open={confirmDelete} onClose={() => setConfirmDelete(false)} title={t('jd.deleteTitle', { title: j.title })} description={t('jd.deleteHelp')}>
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={() => setConfirmDelete(false)}>
-            Keep it
+            {t('jd.keep')}
           </Button>
           <ButtonLink
             to="/app/journeys"
@@ -467,14 +472,14 @@ export function JourneyDetailPage() {
               try {
                 await api.deleteJourney(j.id)
                 refresh(['journeys', 'tasks'])
-                toast('Journey deleted')
+                toast(t('jd.deleted'))
                 navigate('/app/journeys')
               } catch (err) {
-                toast(err instanceof Error ? err.message : 'The journey wasn’t deleted.', 'error')
+                toast(err instanceof Error ? err.message : t('jd.deleteFailed'), 'error')
               }
             }}
           >
-            Delete
+            {t('common.delete')}
           </ButtonLink>
         </div>
       </Dialog>

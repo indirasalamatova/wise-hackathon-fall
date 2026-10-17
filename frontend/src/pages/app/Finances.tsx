@@ -2,23 +2,25 @@ import { useEffect, useMemo, useState } from 'react'
 import { NavLink } from 'react-router'
 import { Flag } from '@/components/brand/Flag'
 import { Badge, Card, CardTitle, PageHeader, Progress } from '@/components/ui/primitives'
+import { useI18n } from '@/i18n'
 import { budgetCountries, proofOfFunds } from '@/lib/mock-data'
 import { cn, money, shortDate } from '@/lib/format'
 import { useAuth, useCase, useToast } from '@/store/context'
 
 export function FinanceTabs() {
+  const { t } = useI18n()
   const tab = ({ isActive }: { isActive: boolean }) =>
     cn(
       'relative pb-3 text-[15px] font-semibold transition-colors',
       isActive ? 'text-forest-950 after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:rounded-full after:bg-brick-600' : 'text-muted hover:text-forest-950',
     )
   return (
-    <nav aria-label="Finances" className="mb-6 flex gap-7 border-b border-rose-200">
+    <nav aria-label={t('finances.title')} className="mb-6 flex gap-7 border-b border-rose-200">
       <NavLink to="/app/finances" end className={tab}>
-        Overview
+        {t('finances.overview')}
       </NavLink>
       <NavLink to="/app/finances/costs" className={tab}>
-        Visa costs and payments
+        {t('finances.costsTab')}
       </NavLink>
     </nav>
   )
@@ -40,19 +42,20 @@ const MAX_LIVING = 1500
 function useSavedNumber(key: 'monthlyBudget' | 'savings') {
   const { user, updateUser } = useAuth()
   const { toast } = useToast()
+  const { t } = useI18n()
   const saved = user?.[key] ?? 0
   const [value, setValue] = useState(saved)
 
   useEffect(() => {
     if (value === saved) return
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       updateUser({ [key]: value }).catch((e) => {
         setValue(saved)
-        toast(e instanceof Error ? e.message : 'That wasn’t saved. Try again.', 'error')
+        toast(e instanceof Error ? e.message : t('finances.saveFailed'), 'error')
       })
     }, 500)
-    return () => clearTimeout(t)
-  }, [key, value, saved, updateUser, toast])
+    return () => clearTimeout(timer)
+  }, [key, value, saved, updateUser, toast, t])
 
   return [value, setValue] as const
 }
@@ -62,6 +65,7 @@ export function FinancesPage() {
   const [budget, setBudget] = useSavedNumber('monthlyBudget')
   const [savings, setSavings] = useSavedNumber('savings')
   const [selected, setSelected] = useState<string>('HU')
+  const { t, country } = useI18n()
 
   const ranked = useMemo(() => [...budgetCountries].sort((a, b) => a.living - b.living), [])
   const bestFit = ranked.find((c) => c.living <= budget)
@@ -70,25 +74,33 @@ export function FinancesPage() {
 
   return (
     <>
-      <PageHeader title="Finances" subtitle="Where your money goes furthest, and what each visa asks you to prove." />
+      <PageHeader title={t('finances.title')} subtitle={t('finances.subtitle')} />
       <FinanceTabs />
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <Stat dark label="Savings" value={money(savings)} sub="Set in proof of funds" />
-        <Stat label="Paid so far" value={money(paidTotal)} sub={paid[0] ? `Last: ${paid[0].what} on ${shortDate(paid[0].date)}` : 'No payments yet'} />
-        <Stat label="Monthly budget" value={money(budget)} sub="Set below" />
-        <Stat label="Best fit right now" value={bestFit?.name ?? 'None yet'} sub={bestFit?.permit.replace(/\s*\(.*\)/, '') ?? 'Raise your budget'} />
+        <Stat dark label={t('finances.savings')} value={money(savings)} sub={t('finances.savingsSub')} />
+        <Stat
+          label={t('finances.paid')}
+          value={money(paidTotal)}
+          sub={paid[0] ? t('finances.lastPaid', { what: paid[0].what, date: shortDate(paid[0].date) }) : t('finances.noPayments')}
+        />
+        <Stat label={t('finances.budget')} value={money(budget)} sub={t('finances.budgetSub')} />
+        <Stat
+          label={t('finances.bestFit')}
+          value={bestFit ? country(bestFit.code) : t('finances.none')}
+          sub={bestFit ? t(bestFit.permit).replace(/\s*\(.*\)/, '') : t('finances.raise')}
+        />
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
         <Card className="p-6">
-          <CardTitle>Best country for my budget</CardTitle>
+          <CardTitle>{t('finances.bestCountry')}</CardTitle>
           <p className="mt-1 text-[13px] text-muted">
-            Monthly budget {money(budget)} · Savings {money(savings)} · Stay after graduation
+            {t('finances.summary', { budget: money(budget), savings: money(savings) })}
           </p>
 
           <label htmlFor="budget" className="mt-5 flex items-center justify-between text-sm font-semibold">
-            Monthly budget <span className="font-display">{money(budget)}</span>
+            {t('finances.budget')} <span className="font-display">{money(budget)}</span>
           </label>
           <input
             id="budget"
@@ -119,15 +131,15 @@ export function FinancesPage() {
                     <span className="text-base font-semibold">{i + 1}</span>
                     <Flag code={c.code} />
                     <span className="min-w-0">
-                      <span className="block text-sm font-semibold">{c.name}</span>
-                      <span className="block truncate text-xs text-muted">{c.permit}</span>
+                      <span className="block text-sm font-semibold">{country(c.code)}</span>
+                      <span className="block truncate text-xs text-muted">{t(c.permit)}</span>
                     </span>
                     <span className="hidden sm:block">
-                      <span className="block text-[11px] text-muted">Living €{c.living}/mo</span>
+                      <span className="block text-[11px] text-muted">{t('finances.living', { amount: money(c.living) })}</span>
                       <Progress value={(c.living / MAX_LIVING) * 100} tone={fits ? 'dark' : 'accent'} className="mt-1 h-2" />
                     </span>
                     <Badge tone={fits ? 'ok' : 'danger'} className="min-w-[90px]">
-                      {fits ? 'Fits' : `Short €${c.living - budget}/mo`}
+                      {fits ? t('finances.fits') : t('finances.shortMonthly', { amount: money(c.living - budget) })}
                     </Badge>
                   </button>
                 </li>
@@ -137,10 +149,10 @@ export function FinancesPage() {
         </Card>
 
         <Card className="p-6">
-          <CardTitle>Proof-of-funds checker</CardTitle>
-          <p className="mt-1 text-[13px] text-muted">Your savings vs what each visa asks you to show</p>
+          <CardTitle>{t('finances.proof')}</CardTitle>
+          <p className="mt-1 text-[13px] text-muted">{t('finances.proofSub')}</p>
           <label htmlFor="savings" className="mt-5 block text-sm font-semibold">
-            Your savings
+            {t('finances.yourSavings')}
           </label>
           <div className="relative mt-2">
             <span className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-[15px] text-muted">€</span>
@@ -160,27 +172,28 @@ export function FinancesPage() {
             {proofOfFunds.map((p) => {
               const short = p.required - savings
               const covered = short <= 0
+              const label = t(p.label, { country: country(p.code) })
               return (
                 <li key={p.code}>
                   <div className="mb-2 flex items-center justify-between gap-3">
                     <span className="flex min-w-0 items-center gap-2.5 text-sm font-semibold">
                       <Flag code={p.code} />
-                      <span className="truncate">{p.label}</span>
+                      <span className="truncate">{label}</span>
                     </span>
                     <Badge tone={covered ? 'ok' : 'danger'} className="min-w-[98px]">
-                      {covered ? 'Covered' : `Short ${money(short)}`}
+                      {covered ? t('finances.covered') : t('finances.short', { amount: money(short) })}
                     </Badge>
                   </div>
                   <Progress
                     value={Math.min(100, (savings / p.required) * 100)}
                     tone={covered ? 'ok' : 'accent'}
-                    label={`${p.label} funds covered`}
+                    label={t('finances.fundsCovered', { label })}
                   />
                 </li>
               )
             })}
           </ul>
-          <p className="mt-5 text-xs text-muted">Sample figures. Check current amounts with the official source.</p>
+          <p className="mt-5 text-xs text-muted">{t('finances.sample')}</p>
         </Card>
       </div>
     </>

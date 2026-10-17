@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 
 const PREFIX = 'unbound:'
+/** Device preferences that survive logging out. */
+const KEEP = new Set(['language'])
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -28,7 +30,7 @@ export function usePersistentState<T>(key: string, fallback: T) {
 export function clearPersisted() {
   try {
     Object.keys(localStorage)
-      .filter((k) => k.startsWith(PREFIX))
+      .filter((k) => k.startsWith(PREFIX) && !KEEP.has(k.slice(PREFIX.length)))
       .forEach((k) => localStorage.removeItem(k))
   } catch {
     /* ignore */

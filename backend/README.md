@@ -146,6 +146,24 @@ by the pipeline's entries.
 the database, so uploads are analysed even across restarts) and the pipeline schedule. A Postgres
 advisory lock keeps the pipeline to one run at a time.
 
+## Explore map (visa eligibility)
+
+`GET /api/explore/map` colours every country for one passport, residence permit and purpose;
+`GET /api/explore/countries/{code}` explains one. Both default to the user's profile
+(`nationality_code`, `residence_code`, `travel_purpose`); `?origin=&residence=&purpose=` explore "what if"
+without saving. Favourites: `GET/POST /api/explore/favorites`, `DELETE /api/explore/favorites/{code}`.
+
+`app/explore.py` decides, in this order: own country or residence country → rules (EU/EEA/Swiss free
+movement; a Schengen residence permit for short Schengen trips) → a **current** guideline with an
+`entry_type` → the indicative matrix (tourism only) → unknown. Stale guidelines are withheld here too.
+The passport country comes from the profile, else the analysed passport's MRZ nationality, else the
+citizenship text.
+
+The indicative matrix is the open Passport Index dataset (MIT), bundled in `data/visa-matrix/` as of
+2025-01-12 and loaded into `visa_requirements` on first start. It is never presented as verified. To
+colour a country from your own data, give its guideline an `entry_type`
+(`visa_free | visa_on_arrival | evisa | visa_required`) and verify it.
+
 ## Tests
 
 ```bash
@@ -153,6 +171,7 @@ docker exec -w /app unbound_backend python -m pytest -q tests/
 ```
 
 - `test_rules.py`: dates, MRZ, fees, requirement checks, form fill.
+- `test_explore.py`: explore map eligibility precedence, country-code parsing, the bundled visa matrix.
 - `test_forms_pdf.py`: values land next to their labels, missing labels and tight gaps are skipped,
   every form placement refers to a real field, the data sheet renders Unicode.
 - `test_verify.py`: quote matching, amounts and currencies, dropping unproven facts, publish rules.

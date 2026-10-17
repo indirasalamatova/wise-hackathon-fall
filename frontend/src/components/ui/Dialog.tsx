@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { X } from 'lucide-react'
+import { useI18n } from '@/i18n'
 import { cn } from '@/lib/format'
 
 /** Native <dialog>: focus trap, Esc and backdrop handled by the browser. */
@@ -19,6 +20,7 @@ export function Dialog({
   className?: string
 }) {
   const ref = useRef<HTMLDialogElement>(null)
+  const { t } = useI18n()
 
   useEffect(() => {
     const el = ref.current
@@ -51,7 +53,7 @@ export function Dialog({
             <button
               type="button"
               onClick={onClose}
-              aria-label="Close"
+              aria-label={t('common.close')}
               className="-m-1 grid size-9 shrink-0 place-items-center rounded-full hover:bg-rose-100"
             >
               <X className="size-5" />
