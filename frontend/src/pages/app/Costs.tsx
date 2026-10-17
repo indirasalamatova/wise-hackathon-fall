@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { Flag } from '@/components/brand/Flag'
 import { Button } from '@/components/ui/Button'
-import { Card, CardTitle, Checkbox, PageHeader, Segmented } from '@/components/ui/primitives'
+import { Card, CardTitle, Checkbox, PageHeader } from '@/components/ui/primitives'
 import { PayDialog } from '@/components/case/DocumentDialogs'
 import { visaOptions } from '@/lib/mock-data'
 import { cn, money, shortDate } from '@/lib/format'
@@ -106,10 +106,9 @@ function Calculator({ onPay }: { onPay: (amount: number, what: string) => void }
 }
 
 export function CostsPage() {
-  const { payments, payVisaFee } = useCase()
-  const [filter, setFilter] = useState<'all' | 'upcoming' | 'paid'>('all')
+  const { payments, recordPayment } = useCase()
   const [pay, setPay] = useState<{ amount: number; what: string } | null>(null)
-  const list = payments.filter((p) => filter === 'all' || p.status === filter).sort((a, b) => b.date.localeCompare(a.date))
+  const list = [...payments].sort((a, b) => b.date.localeCompare(a.date))
 
   return (
     <>
@@ -120,19 +119,8 @@ export function CostsPage() {
         <Calculator onPay={(amount, what) => setPay({ amount, what })} />
 
         <Card className="p-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <CardTitle>Payments history</CardTitle>
-            <Segmented
-              label="Filter payments"
-              value={filter}
-              onChange={setFilter}
-              options={[
-                { value: 'all', label: 'All' },
-                { value: 'upcoming', label: 'Upcoming' },
-                { value: 'paid', label: 'Paid' },
-              ]}
-            />
-          </div>
+          <CardTitle>Payments history</CardTitle>
+          {list.length > 0 && (
           <table className="mt-4 w-full text-left text-sm">
             <thead>
               <tr className="text-[11px] tracking-[0.15em] text-muted uppercase">
@@ -158,7 +146,8 @@ export function CostsPage() {
               ))}
             </tbody>
           </table>
-          {list.length === 0 && <p className="py-8 text-center text-sm text-muted">No payments here yet.</p>}
+          )}
+          {list.length === 0 && <p className="py-8 text-center text-sm text-muted">No payments yet. Fees you pay with the calculator show up here.</p>}
         </Card>
       </div>
 
@@ -167,7 +156,7 @@ export function CostsPage() {
         amount={pay?.amount ?? 0}
         what={pay?.what ?? ''}
         onClose={() => setPay(null)}
-        onPay={() => (pay ? payVisaFee(pay.what, pay.amount) : Promise.resolve())}
+        onPay={() => (pay ? recordPayment(pay.what, pay.amount) : Promise.resolve())}
       />
     </>
   )

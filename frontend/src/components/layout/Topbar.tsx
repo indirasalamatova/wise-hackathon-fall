@@ -42,7 +42,7 @@ function GlobalSearch() {
     const hit = (s: string) => s.toLowerCase().includes(term)
     return [
       ...tasks.filter((t) => hit(t.title)).map((t) => ({ group: 'Tasks', label: t.title, to: '/app/todo' })),
-      ...documents.filter((d) => hit(d.name)).map((d) => ({ group: 'Documents', label: d.name, to: '/app/documents' })),
+      ...documents.filter((d) => hit(d.title) || hit(d.fileName)).map((d) => ({ group: 'Documents', label: d.title, to: '/app/documents' })),
       ...destinations.filter((c) => hit(c.name)).map((c) => ({ group: 'Countries', label: c.name, to: '/app/finances' })),
     ].slice(0, 8)
   }, [q, tasks, documents])

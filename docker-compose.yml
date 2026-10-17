@@ -53,8 +53,20 @@ services:
       S3_ACCESS_KEY_ID: minioadmin
       S3_SECRET_ACCESS_KEY: minioadmin
       S3_BUCKET_NAME: unbound-docs
-      MOCK_TODAY: "2026-10-16"
       CORS_ORIGINS: "http://localhost:5173,http://localhost:3000"
+      # Set both in a root .env file (see .env.example). GOOGLE_CLIENT_ID must match the frontend's.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      # AI agents (chat + document analysis). Without a key the rest of the app still works.
+      # LLM_PROVIDER: gemini or anthropic; unset = gemini when GEMINI_API_KEY is set.
+      LLM_PROVIDER: ${LLM_PROVIDER:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-1.5-flash}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-5-5}
+      AGENT_EFFORT: ${AGENT_EFFORT:-high}
+      # Guidelines verified longer ago than this are treated as out of date.
+      GUIDELINE_MAX_AGE_DAYS: ${GUIDELINE_MAX_AGE_DAYS:-90}
     depends_on:
       postgres:
         condition: service_healthy

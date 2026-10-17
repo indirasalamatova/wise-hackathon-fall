@@ -10,6 +10,21 @@ export class ApiError extends Error {
 
 const UNREACHABLE = 'Can’t reach the Unbound server. Check that the backend is running and try again.'
 
+let authToken: string | null = null
+let onUnauthorized: () => void = () => {}
+
+/** Set by the auth store; every request sends it as a bearer token. */
+export function setAuthToken(token: string | null) {
+  authToken = token
+}
+
+/** Called when the server rejects the token (expired, account deleted). */
+export function setUnauthorizedHandler(fn: () => void) {
+  onUnauthorized = fn
+}
+
+const authHeaders = (): Record<string, string> => (authToken ? { Authorization: `Bearer ${authToken}` } : {})
+
 /** FastAPI sends `detail` as a string, or as a list of validation errors on 422. */
 function messageFrom(body: unknown, status: number): string {
   const detail = (body as { detail?: unknown } | null)?.detail
@@ -29,34 +44,82 @@ async function parse(res: Response) {
   }
 }
 
-export async function request<T>(
-  path: string,
-  { method = 'GET', body, signal }: { method?: string; body?: unknown; signal?: AbortSignal } = {},
-): Promise<T> {
+async function send(path: string, init: RequestInit): Promise<Response> {
   let res: Response
   try {
-    res = await fetch(`${API_URL}${path}`, {
-      method,
-      signal,
-      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    })
+    res = await fetch(`${API_URL}${path}`, { ...init, headers: { ...authHeaders(), ...init.headers } })
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw e
     throw new ApiError(UNREACHABLE)
   }
-  const data = await parse(res)
-  if (!res.ok) throw new ApiError(messageFrom(data, res.status), res.status)
-  return data as T
+  if (!res.ok) {
+    const data = await parse(res)
+    if (res.status === 401 && authToken) {
+      // Drop the token first so the other in-flight requests' 401s don't log out again.
+      authToken = null
+      onUnauthorized()
+    }
+    throw new ApiError(messageFrom(data, res.status), res.status)
+  }
+  return res
+}
+
+export async function request<T>(
+  path: string,
+  { method = 'GET', body, signal }: { method?: string; body?: unknown; signal?: AbortSignal } = {},
+): Promise<T> {
+  const res = await send(path, {
+    method,
+    signal,
+    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  return (await parse(res)) as T
+}
+
+/**
+ * POST and read a server-sent event stream (`data: {...}` lines).
+ * EventSource can't POST or send a bearer token, so this reads the fetch body.
+ */
+export async function streamEvents<E>(path: string, body: unknown, onEvent: (e: E) => void, signal?: AbortSignal): Promise<void> {
+  const res = await send(path, {
+    method: 'POST',
+    signal,
+    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    body: JSON.stringify(body),
+  })
+  if (!res.body) throw new ApiError('The server didn’t stream a response.')
+  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader()
+  let buffer = ''
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += value
+    let cut: number
+    while ((cut = buffer.indexOf('\n\n')) >= 0) {
+      const chunk = buffer.slice(0, cut)
+      buffer = buffer.slice(cut + 2)
+      const data = chunk
+        .split('\n')
+        .filter((l) => l.startsWith('data:'))
+        .map((l) => l.slice(5).trimStart())
+        .join('\n')
+      if (data) onEvent(JSON.parse(data) as E)
+    }
+  }
+}
+
+export async function getBlob(path: string): Promise<Blob> {
+  return (await send(path, {})).blob()
 }
 
 /** Multipart upload via XHR, because fetch has no upload progress events. */
-export function upload<T>(path: string, file: File, onProgress: (pct: number) => void): Promise<T> {
+export function upload<T>(path: string, form: FormData, onProgress: (pct: number) => void): Promise<T> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('POST', `${API_URL}${path}`)
+    if (authToken) xhr.setRequestHeader('Authorization', `Bearer ${authToken}`)
     xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(Math.round((e.loaded / e.total) * 100))
-    xhr.upload.onload = () => onProgress(100)
     xhr.onerror = () => reject(new ApiError(UNREACHABLE))
     xhr.onload = () => {
       let data: unknown = null
@@ -65,11 +128,13 @@ export function upload<T>(path: string, file: File, onProgress: (pct: number) =>
       } catch {
         /* non-JSON error page */
       }
-      if (xhr.status >= 200 && xhr.status < 300) resolve(data as T)
-      else reject(new ApiError(messageFrom(data, xhr.status), xhr.status))
+      if (xhr.status >= 200 && xhr.status < 300) return resolve(data as T)
+      if (xhr.status === 401 && authToken) {
+        authToken = null
+        onUnauthorized()
+      }
+      reject(new ApiError(messageFrom(data, xhr.status), xhr.status))
     }
-    const form = new FormData()
-    form.append('file', file)
     xhr.send(form)
   })
 }

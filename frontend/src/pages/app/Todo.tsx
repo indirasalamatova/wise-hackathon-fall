@@ -55,6 +55,7 @@ export function TodoPage() {
   const { toast } = useToast()
   const [filter, setFilter] = useState<Filter>('open')
   const [draft, setDraft] = useState('')
+  const [due, setDue] = useState('')
   const [adding, setAdding] = useState(false)
   const open = tasks.filter((t) => !t.done)
   const done = tasks.filter((t) => t.done)
@@ -83,8 +84,9 @@ export function TodoPage() {
               if (!draft.trim()) return
               setAdding(true)
               try {
-                await addTask(draft.trim())
+                await addTask(draft.trim(), due || undefined)
                 setDraft('')
+                setDue('')
                 setFilter('open')
               } catch (err) {
                 toast(err instanceof Error ? err.message : 'Task wasn’t added. Try again.', 'error')
@@ -92,12 +94,16 @@ export function TodoPage() {
                 setAdding(false)
               }
             }}
-            className="flex gap-3"
+            className="flex flex-wrap gap-3 sm:flex-nowrap"
           >
             <label htmlFor="new-task" className="sr-only">
               New task
             </label>
-            <Input id="new-task" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Add a task, e.g. Book translator" />
+            <Input id="new-task" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Add a task, e.g. Book translator" maxLength={200} />
+            <label htmlFor="new-task-due" className="sr-only">
+              Due date (optional)
+            </label>
+            <Input id="new-task-due" type="date" value={due} onChange={(e) => setDue(e.target.value)} className="sm:w-44" title="Due date (optional)" />
             <Button type="submit" size="lg" disabled={!draft.trim()} loading={adding} className="h-12 shrink-0">
               Add task
             </Button>

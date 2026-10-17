@@ -3,6 +3,7 @@ import { FileText, ListChecks, MessageSquareText, Route, Wallet, PanelLeftClose,
 import { Logo, LogoMark } from '@/components/brand/Logo'
 import { Avatar } from '@/components/ui/primitives'
 import { useAuth, useCase } from '@/store/context'
+import { expiryOf } from '@/components/case/expiry'
 import { cn } from '@/lib/format'
 
 const navItems = [
@@ -27,7 +28,7 @@ export function Sidebar({
   const { user } = useAuth()
   const { tasks, documents } = useCase()
   const openTasks = tasks.filter((t) => !t.done).length
-  const docsToFix = documents.filter((d) => d.status !== 'ready').length
+  const docsToFix = documents.filter((d) => ['expired', 'soon'].includes(expiryOf(d.expiresOn).state)).length
   const counts: Record<string, number> = { '/app/todo': openTasks, '/app/documents': docsToFix }
 
   return (
@@ -112,7 +113,7 @@ export function Sidebar({
             )
           }
         >
-          <Avatar text={user.initials} />
+          <Avatar text={user.initials} src={user.pictureUrl} />
           {!collapsed && (
             <span className="min-w-0 leading-tight">
               <span className="block truncate text-sm font-semibold">

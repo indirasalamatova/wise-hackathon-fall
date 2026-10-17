@@ -1,0 +1,102 @@
+{
+  "destination_code": "HU",
+  "destination_name": "Hungary",
+  "origin_code": "RU",
+  "purpose": "tourism",
+  "visa_type": "Schengen short-stay visa (type C)",
+  "summary": "DRAFT, NOT VERIFIED: written from general knowledge to show the import format. Check every value against the sources below and set verified_at before agents may use it. Russian citizens need a Schengen type C visa for tourist stays in Hungary of up to 90 days in any 180-day period.",
+  "max_stay_days": 90,
+  "processing_days_min": 15,
+  "processing_days_max": 45,
+  "requirements": [
+    {
+      "key": "passport",
+      "title": "Valid passport",
+      "description": "Issued within the last 10 years, valid at least 3 months after the planned departure from the Schengen area, with at least 2 blank pages.",
+      "doc_kind": "passport",
+      "constraints": { "valid_months_after_stay": 3, "issued_within_years": 10 }
+    },
+    {
+      "key": "application_form",
+      "title": "Completed Schengen visa application form",
+      "description": "Harmonised Schengen application form, signed by the applicant.",
+      "doc_kind": "application_form"
+    },
+    {
+      "key": "photo",
+      "title": "Biometric photo",
+      "description": "35 × 45 mm, light background, taken within the last 6 months.",
+      "doc_kind": "photo",
+      "constraints": { "max_age_days": 180 }
+    },
+    {
+      "key": "insurance",
+      "title": "Travel medical insurance",
+      "description": "Covers the whole stay in the Schengen area, minimum cover EUR 30,000, including medical repatriation.",
+      "doc_kind": "insurance",
+      "constraints": { "min_amount": "30000.00", "min_amount_currency": "EUR" }
+    },
+    {
+      "key": "accommodation",
+      "title": "Proof of accommodation",
+      "description": "Hotel booking, rental agreement or an invitation from a host for every night of the stay.",
+      "doc_kind": "accommodation"
+    },
+    {
+      "key": "funds",
+      "title": "Proof of sufficient funds",
+      "description": "Recent bank statements showing enough money for the stay and the return journey.",
+      "doc_kind": "bank_statement",
+      "constraints": { "max_age_days": 30 }
+    },
+    {
+      "key": "itinerary",
+      "title": "Travel itinerary",
+      "description": "Return ticket or booking showing entry and exit dates.",
+      "doc_kind": "itinerary"
+    }
+  ],
+  "fees": [
+    { "key": "visa_fee", "title": "Schengen visa fee (adult)", "amount": "90.00", "currency": "EUR" },
+    { "key": "service_fee", "title": "Visa application centre service fee", "amount": null, "currency": "EUR", "note": "Set by the visa centre; check when booking." }
+  ],
+  "steps": [
+    { "key": "book_appointment", "title": "Book a visa appointment", "description": "Applications can be submitted at most 6 months and at the latest 15 days before travel.", "days_before_travel": 45, "category": "Appointment" },
+    { "key": "collect_documents", "title": "Collect all required documents", "description": "Gather everything on the checklist before the appointment.", "days_before_travel": 35, "category": "Documents" },
+    { "key": "pay_fee", "title": "Pay the visa fee", "description": "Paid at the appointment or in advance, depending on the visa centre.", "days_before_travel": 30, "category": "Finances" },
+    { "key": "submit", "title": "Submit the application and give biometrics", "description": "Fingerprints are taken unless given in the last 59 months.", "days_before_travel": 30, "category": "Appointment" },
+    { "key": "decision", "title": "Collect the passport with the decision", "description": "Standard processing is 15 calendar days and can be extended.", "days_before_travel": 7, "category": "Journey" }
+  ],
+  "forms": [
+    {
+      "key": "schengen_application",
+      "title": "Schengen visa application form",
+      "official_url": "https://home-affairs.ec.europa.eu/policies/schengen-borders-and-visa/visa-policy/applying-schengen-visa_en",
+      "fields": [
+        { "key": "surname", "label": "1. Surname", "source": "passport.surname", "format": "upper" },
+        { "key": "given_names", "label": "3. First name(s)", "source": "passport.given_names", "format": "upper" },
+        { "key": "date_of_birth", "label": "4. Date of birth (dd-mm-yyyy)", "source": "passport.date_of_birth", "format": "date:DD-MM-YYYY" },
+        { "key": "nationality", "label": "7. Current nationality", "source": ["passport.nationality", "profile.citizenship"] },
+        { "key": "sex", "label": "8. Sex", "source": "passport.sex" },
+        { "key": "travel_document_type", "label": "12. Type of travel document", "source": null, "hint": "Ordinary passport" },
+        { "key": "document_number", "label": "13. Number of travel document", "source": "passport.document_number" },
+        { "key": "issue_date", "label": "14. Date of issue", "source": "passport.issue_date", "format": "date:DD-MM-YYYY" },
+        { "key": "expiry_date", "label": "15. Valid until", "source": "passport.expiry_date", "format": "date:DD-MM-YYYY" },
+        { "key": "issuing_country", "label": "16. Issued by (country)", "source": "passport.issuing_country" },
+        { "key": "address", "label": "19. Home address", "source": "profile.address" },
+        { "key": "email", "label": "19. Email address", "source": "profile.email" },
+        { "key": "occupation", "label": "21. Current occupation", "source": "profile.studies" },
+        { "key": "purpose", "label": "23. Purpose of the journey", "source": "plan.purpose", "format": "upper" },
+        { "key": "destination", "label": "25. Member State of main destination", "source": "plan.destination_name" },
+        { "key": "arrival", "label": "29. Intended date of arrival", "source": "plan.travel_date", "format": "date:DD-MM-YYYY" },
+        { "key": "departure", "label": "30. Intended date of departure", "source": "plan.departure_date", "format": "date:DD-MM-YYYY" }
+      ]
+    }
+  ],
+  "sources": [
+    { "title": "Hungarian Consular Service: visa information", "url": "https://konzuliszolgalat.kormany.hu/en" },
+    { "title": "European Commission: applying for a Schengen visa", "url": "https://home-affairs.ec.europa.eu/policies/schengen-borders-and-visa/visa-policy/applying-schengen-visa_en" }
+  ],
+  "verified_at": null,
+  "valid_until": null
+}

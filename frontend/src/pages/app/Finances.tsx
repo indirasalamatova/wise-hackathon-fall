@@ -36,40 +36,46 @@ function Stat({ label, value, sub, dark }: { label: string; value: string; sub: 
 
 const MAX_LIVING = 1500
 
-export function FinancesPage() {
-  const { user, setBudget: saveBudget } = useAuth()
-  const { payments } = useCase()
+/** A profile number edited live and saved once the input settles, not on every step. */
+function useSavedNumber(key: 'monthlyBudget' | 'savings') {
+  const { user, updateUser } = useAuth()
   const { toast } = useToast()
-  const saved = user?.monthlyBudget ?? 1100
-  const wiseBalance = user?.wiseBalance ?? 0
-  const [budget, setBudget] = useState(saved)
-  const [selected, setSelected] = useState<string>('HU')
+  const saved = user?.[key] ?? 0
+  const [value, setValue] = useState(saved)
 
-  // Save the slider once it settles, not on every step.
   useEffect(() => {
-    if (budget === saved) return
+    if (value === saved) return
     const t = setTimeout(() => {
-      saveBudget(budget).catch((e) => {
-        setBudget(saved)
-        toast(e instanceof Error ? e.message : 'Budget wasn’t saved. Try again.', 'error')
+      updateUser({ [key]: value }).catch((e) => {
+        setValue(saved)
+        toast(e instanceof Error ? e.message : 'That wasn’t saved. Try again.', 'error')
       })
     }, 500)
     return () => clearTimeout(t)
-  }, [budget, saved, saveBudget, toast])
+  }, [key, value, saved, updateUser, toast])
+
+  return [value, setValue] as const
+}
+
+export function FinancesPage() {
+  const { payments } = useCase()
+  const [budget, setBudget] = useSavedNumber('monthlyBudget')
+  const [savings, setSavings] = useSavedNumber('savings')
+  const [selected, setSelected] = useState<string>('HU')
 
   const ranked = useMemo(() => [...budgetCountries].sort((a, b) => a.living - b.living), [])
   const bestFit = ranked.find((c) => c.living <= budget)
-  const upcoming = payments.filter((p) => p.status === 'upcoming').sort((a, b) => a.date.localeCompare(b.date))
-  const upcomingTotal = upcoming.reduce((s, p) => s + p.amount, 0)
+  const paid = payments.filter((p) => p.status === 'paid')
+  const paidTotal = paid.reduce((s, p) => s + p.amount, 0)
 
   return (
     <>
-      <PageHeader eyebrow="Connected to Wise" title="Finances" subtitle="Where your money goes furthest, and what each visa asks you to prove." />
+      <PageHeader title="Finances" subtitle="Where your money goes furthest, and what each visa asks you to prove." />
       <FinanceTabs />
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <Stat dark label="Available in Wise" value={money(wiseBalance)} sub="EUR + HUF balances" />
-        <Stat label="Upcoming payments" value={money(upcomingTotal)} sub={upcoming[0] ? `Next: ${upcoming[0].what.toLowerCase()} on ${shortDate(upcoming[0].date)}` : 'Nothing due'} />
+        <Stat dark label="Savings" value={money(savings)} sub="Set in proof of funds" />
+        <Stat label="Paid so far" value={money(paidTotal)} sub={paid[0] ? `Last: ${paid[0].what} on ${shortDate(paid[0].date)}` : 'No payments yet'} />
         <Stat label="Monthly budget" value={money(budget)} sub="Set below" />
         <Stat label="Best fit right now" value={bestFit?.name ?? 'None yet'} sub={bestFit?.permit.replace(/\s*\(.*\)/, '') ?? 'Raise your budget'} />
       </div>
@@ -78,7 +84,7 @@ export function FinancesPage() {
         <Card className="p-6">
           <CardTitle>Best country for my budget</CardTitle>
           <p className="mt-1 text-[13px] text-muted">
-            Monthly budget {money(budget)} · Savings {money(wiseBalance)} · Stay after graduation
+            Monthly budget {money(budget)} · Savings {money(savings)} · Stay after graduation
           </p>
 
           <label htmlFor="budget" className="mt-5 flex items-center justify-between text-sm font-semibold">
@@ -132,10 +138,27 @@ export function FinancesPage() {
 
         <Card className="p-6">
           <CardTitle>Proof-of-funds checker</CardTitle>
-          <p className="mt-1 text-[13px] text-muted">Your Wise balance vs what each visa asks</p>
+          <p className="mt-1 text-[13px] text-muted">Your savings vs what each visa asks you to show</p>
+          <label htmlFor="savings" className="mt-5 block text-sm font-semibold">
+            Your savings
+          </label>
+          <div className="relative mt-2">
+            <span className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-[15px] text-muted">€</span>
+            <input
+              id="savings"
+              type="number"
+              min={0}
+              step={100}
+              inputMode="numeric"
+              value={savings || ''}
+              placeholder="0"
+              onChange={(e) => setSavings(Math.max(0, Math.round(Number(e.target.value) || 0)))}
+              className="h-11 w-full rounded-2xl border border-rose-300 bg-white pr-4 pl-9 text-[15px] outline-none focus:border-forest-950"
+            />
+          </div>
           <ul className="mt-6 flex flex-col gap-5">
             {proofOfFunds.map((p) => {
-              const short = p.required - wiseBalance
+              const short = p.required - savings
               const covered = short <= 0
               return (
                 <li key={p.code}>
@@ -149,7 +172,7 @@ export function FinancesPage() {
                     </Badge>
                   </div>
                   <Progress
-                    value={Math.min(100, (wiseBalance / p.required) * 100)}
+                    value={Math.min(100, (savings / p.required) * 100)}
                     tone={covered ? 'ok' : 'accent'}
                     label={`${p.label} funds covered`}
                   />

@@ -9,37 +9,45 @@ npm run dev      # http://localhost:5173
 npm run build
 ```
 
-## Backend
+## Setup
 
-The app reads and writes everything through the FastAPI backend in `../backend`.
+Everything is per user and comes from the FastAPI backend in `../backend`. There is no seeded or demo data.
+
+1. Create an OAuth client in Google Cloud Console → APIs & Services → Credentials:
+   type **Web application**, authorised JavaScript origin `http://localhost:5173`.
+2. In the repo root, copy `.env.example` to `.env` and set `GOOGLE_CLIENT_ID` and `JWT_SECRET`
+   (`openssl rand -hex 32`). The frontend reads the same `GOOGLE_CLIENT_ID` (see `vite.config.ts`).
+3. Run it:
 
 ```bash
-docker compose up -d          # from the repo root: Postgres, RustFS, Redis, API on :8000
-cp .env.example .env          # VITE_API_URL, defaults to http://localhost:8000
+docker compose up -d --build  # from the repo root: Postgres, RustFS, Redis, API on :8000
 npm run dev                   # must run on :5173, the origin the API allows (CORS_ORIGINS)
 ```
 
-If the API is down, the app shows "Your case didn't load" with a retry button.
+## How auth works
+
+Google Sign-In gives the browser an ID token. `POST /api/auth/google` checks it against
+`GOOGLE_CLIENT_ID`, creates or updates the user, and returns our own JWT (7 days). `src/lib/http.ts`
+sends it as `Authorization: Bearer …` on every call; a 401 logs you out. Every table has a `user_id`,
+and the API only returns rows owned by the caller.
 
 `src/lib/api.ts` is the only file that knows backend field names; it maps them to `src/lib/types.ts`.
 
 | Screen | Endpoints |
 | --- | --- |
-| Profile, sidebar, greeting | `GET/PATCH /api/profile`, `PATCH /api/profile/settings` |
-| Finances budget slider | `PATCH /api/profile/budget` |
+| Login | `POST /api/auth/google` |
+| Profile, journey stage, budget, savings, notification settings | `GET/PATCH/DELETE /api/me` |
+| Documents | `GET/POST /api/documents`, `GET /api/documents/{id}/file`, `DELETE /api/documents/{id}` |
 | To-do list | `GET/POST /api/tasks`, `PATCH/DELETE /api/tasks/{id}` |
-| Journey, Documents | `GET /api/documents`, `PATCH /api/documents/{id}` (request) |
-| Upload + AI check | `POST /api/documents/{id}/upload` (file goes to RustFS, response has check results) |
-| Pay renewal fee | `POST /api/documents/{id}/pay` |
-| Payments history, visa fee | `GET /api/payments`, `POST /api/payments/pay-visa-fee` |
+| Payments | `GET/POST /api/payments` (records a simulated Wise payment; no money moves) |
 | Notifications | `GET /api/notifications`, `POST /api/notifications/{id}/read`, `POST /api/notifications/mark-all-read` |
-| Assistant | `POST /api/assistant/chat` |
+| Assistant | `GET/POST/DELETE /api/chat/sessions`, `GET /api/chat/sessions/{id}/messages`, `POST /api/chat/sessions/{id}/messages` (server-sent events) |
+| Document analysis, plans, forms | `POST /api/documents/{id}/analyze`, `GET /api/plans`, `GET/DELETE /api/forms/{id}`, `GET /api/guidelines/coverage` |
 
-Not on the server yet: login (no auth endpoint, so any email + 6-character password
-opens the single `user_default` profile), chat history (kept in the browser), language
-choice (kept in the browser) and account deletion.
+Uploads: PDF, JPG or PNG up to 10 MB, checked by file contents, not the name. Re-uploading the same
+file is refused. Documents with an expiry date within 60 days create a notification.
 
-Demo: in document upload, a file whose name contains `old` or `expired` fails the AI check.
+Kept in the browser only: language. The agents are described in `../backend/README.md`.
 
 ## Structure
 
@@ -49,14 +57,14 @@ src/
   lib/
     http.ts              fetch wrapper (VITE_API_URL, error messages, upload progress)
     api.ts               API client + adapters from backend shapes to frontend types
-    mock-data.ts         static reference data: countries, visa costs, journey stages
+    mock-data.ts         static reference data only: countries, visa costs, journey stages
     types.ts, format.ts
-  store/                 Auth (session + profile), Case (server data, optimistic updates), Toast
+  store/                 Auth (Google session + profile), Case (server data, optimistic updates), Toast
   components/
     ui/                  Button, Card, Badge, Input, Toggle, Checkbox, Progress, Segmented, Dialog…
     brand/               Logo, Flag
     layout/              AppLayout (auth guard), Sidebar, Topbar (search, language, notifications), PublicHeader
-    case/                DocumentList + Upload / Request / Pay dialogs
+    case/                DocumentList, Upload / Pay dialogs, expiry rules
   pages/
     public/              Landing, OptionsWizard, Login, Signup
     app/                 Assistant, Journey, Documents, Finances, Costs, Todo, Profile

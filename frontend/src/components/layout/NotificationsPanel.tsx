@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router'
 import { Clock, FileText, Send, Wallet } from 'lucide-react'
 import { Segmented } from '@/components/ui/primitives'
 import { useCase } from '@/store/context'
-import { cn } from '@/lib/format'
+import { cn, timeAgo } from '@/lib/format'
 import type { NotificationKind } from '@/lib/types'
 
 const kindStyle: Record<NotificationKind, { icon: typeof Clock; cls: string }> = {
@@ -74,7 +74,7 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
                       {n.unread && <span className="size-2 shrink-0 rounded-full bg-brick-600" aria-label="Unread" />}
                       {n.title}
                     </span>
-                    <span className="shrink-0 text-xs text-muted">{n.time}</span>
+                    <span className="shrink-0 text-xs text-muted">{timeAgo(n.createdAt)}</span>
                   </span>
                   <span className="block text-[13px] text-muted">{n.body}</span>
                 </span>

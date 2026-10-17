@@ -2,6 +2,7 @@ import os
 from collections.abc import AsyncGenerator
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -24,9 +25,21 @@ async_session_maker = sessionmaker(
     expire_on_commit=False
 )
 
+# create_all only creates missing tables; columns added to existing tables go here.
+# Each statement must be idempotent.
+MIGRATIONS = [
+    "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS plan_id VARCHAR",
+    "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS source VARCHAR NOT NULL DEFAULT 'user'",
+    "CREATE INDEX IF NOT EXISTS ix_tasks_plan_id ON tasks (plan_id)",
+    "ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS provider VARCHAR NOT NULL DEFAULT 'anthropic'",
+]
+
+
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
+        for statement in MIGRATIONS:
+            await conn.execute(text(statement))
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     async with async_session_maker() as session:

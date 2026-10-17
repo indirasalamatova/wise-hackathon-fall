@@ -1,57 +1,85 @@
-from datetime import date
-from typing import Optional, List, Union
-from pydantic import BaseModel
+from datetime import date, datetime
+from typing import List, Literal, Optional
 
-from app.models import CaseDocument
+from pydantic import BaseModel, ConfigDict, Field
 
-class TaskCreate(BaseModel):
-    title: str
-    category: str = "Personal"
-    due_date: Optional[date] = None
 
-class TaskUpdate(BaseModel):
-    done: Optional[bool] = None
-    title: Optional[str] = None
+class GoogleAuthRequest(BaseModel):
+    credential: str
 
-class DocumentUpdate(BaseModel):
-    status: Optional[str] = None
-    action: Optional[str] = None
 
-class DocumentCheck(BaseModel):
-    label: str
-    ok: bool
-    detail: str
+class UserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
 
-class DocumentUploadResponse(BaseModel):
-    document: CaseDocument
-    checks: List[DocumentCheck]
-
-class VisaFeePayment(BaseModel):
-    title: str
-    amount_eur: int
-
-class BudgetUpdate(BaseModel):
+    id: str
+    email: str
+    full_name: str
+    first_name: str
+    picture_url: Optional[str]
+    created_at: datetime
+    citizenship: str
+    passport: str
+    address: str
+    residence_status: str
+    studies: str
     monthly_budget_eur: int
+    savings_eur: int
+    journey_stage: str
+    notify_push: bool
+    notify_email: bool
+    notify_sms: bool
 
-class ProfileUpdate(BaseModel):
-    full_name: Optional[str] = None
-    address: Optional[str] = None
 
-class SettingsUpdate(BaseModel):
-    connected_wise: Optional[bool] = None
-    connected_calendar: Optional[bool] = None
+class AuthResponse(BaseModel):
+    access_token: str
+    user: UserOut
+
+
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = Field(default=None, max_length=120)
+    citizenship: Optional[str] = Field(default=None, max_length=80)
+    passport: Optional[str] = Field(default=None, max_length=120)
+    address: Optional[str] = Field(default=None, max_length=200)
+    residence_status: Optional[str] = Field(default=None, max_length=200)
+    studies: Optional[str] = Field(default=None, max_length=200)
+    monthly_budget_eur: Optional[int] = Field(default=None, ge=0, le=100_000)
+    savings_eur: Optional[int] = Field(default=None, ge=0, le=10_000_000)
+    journey_stage: Optional[Literal["apply", "arrive", "stay", "transition"]] = None
     notify_push: Optional[bool] = None
     notify_email: Optional[bool] = None
     notify_sms: Optional[bool] = None
 
+
+class TaskCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    category: str = "Personal"
+    due_date: Optional[date] = None
+
+
+class TaskUpdate(BaseModel):
+    done: Optional[bool] = None
+    title: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    due_date: Optional[date] = None
+
+
+class DocumentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    title: str
+    category: str
+    file_name: str
+    content_type: str
+    size_bytes: int
+    expires_on: Optional[date]
+    uploaded_at: datetime
+    analysis: Optional[dict] = None
+
+
+class PaymentCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    amount_eur: int = Field(gt=0, le=100_000)
+
+
 class ChatRequest(BaseModel):
-    message: str
-
-class ChatBlock(BaseModel):
-    type: str  # "lead", "bullets", "text"
-    text: Optional[str] = None
-    items: Optional[List[str]] = None
-
-class ChatResponse(BaseModel):
-    role: str = "assistant"
-    blocks: List[ChatBlock]
+    message: str = Field(min_length=1, max_length=2000)

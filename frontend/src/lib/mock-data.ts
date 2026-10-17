@@ -1,30 +1,11 @@
-/** Static reference data. Case data (profile, tasks, documents, payments, notifications) comes from the API. */
+/** Static reference data (countries, visa costs, stages). Everything about the user comes from the API. */
 import type { CountryCode, JourneyStage } from './types'
 
-export const caseSummary = {
-  permit: 'Study permit',
-  permitExpires: '2027-01-31',
-  country: 'HU' as CountryCode,
-  countryName: 'Hungary',
-  since: 'Sep 2025',
-}
-
 export const journeyStages: JourneyStage[] = [
-  { key: 'apply', label: 'Apply', when: 'Mar–Jul 2025' },
-  { key: 'arrive', label: 'Arrive', when: 'Sep 2025' },
-  { key: 'stay', label: 'Stay', when: 'Now' },
-  { key: 'transition', label: 'Transition', when: 'From Jun 2028' },
-]
-
-export const currentStageIndex = 2
-
-export const renewalSteps = [
-  { label: 'Case confirmed' },
-  { label: 'Collect documents' },
-  { label: 'AI document check' },
-  { label: 'Submit on Enter Hungary', when: '13 Nov' },
-  { label: 'Biometrics', when: '26 Nov' },
-  { label: 'Decision', when: '~21 days' },
+  { key: 'apply', label: 'Apply', description: 'Choosing a pathway and preparing your application.' },
+  { key: 'arrive', label: 'Arrive', description: 'Registering your address and collecting your residence card.' },
+  { key: 'stay', label: 'Stay', description: 'Keeping your permit valid and renewing it on time.' },
+  { key: 'transition', label: 'Transition', description: 'Changing status after your studies or for a new job.' },
 ]
 
 export const budgetCountries: {
@@ -110,8 +91,8 @@ export const destinations: { code: CountryCode; name: string; cities: string }[]
 ]
 
 export const suggestedQuestions = [
-  'What do I still need for my permit renewal?',
-  'Can I travel to Turkey over Christmas?',
-  'Which country fits my budget after graduation?',
-  'How much money do I need for a German job-seeker visa?',
+  'I’m a Russian citizen and want to visit Hungary as a tourist',
+  'Check my documents and tell me what’s missing',
+  'Which countries can you help with right now?',
+  'Prefill my application form',
 ]

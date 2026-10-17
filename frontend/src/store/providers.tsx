@@ -2,9 +2,13 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { CheckCircle2, AlertCircle } from 'lucide-react'
 import * as api from '@/lib/api'
 import { cn, uid } from '@/lib/format'
-import type { AppNotification, CaseDocument, ChatMessage, Payment, Settings, Task, User } from '@/lib/types'
+import { setAuthToken, setUnauthorizedHandler } from '@/lib/http'
+import type { AppNotification, CaseDocument, Payment, PrefilledForm, ProfilePatch, Settings, Task, User, VisaPlan } from '@/lib/types'
 import { AuthContext, CaseContext, ToastContext, useAuth, useToast, type CaseContextValue, type LoadStatus } from './context'
 import { clearPersisted, usePersistentState } from './persist'
+
+const isSession = (v: unknown): v is { token: string } =>
+  typeof v === 'object' && v !== null && typeof (v as { token?: unknown }).token === 'string' && (v as { token: string }).token.length > 0
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : 'Something went wrong. Try again.')
 
@@ -43,50 +47,71 @@ function useLoader<T>(key: string | null, load: () => Promise<T>) {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast()
-  const [session, setSession] = usePersistentState<{ email: string; started: number } | null>('session', null)
+  const [stored, setSession] = usePersistentState<unknown>('session', null)
+  // Only a `{ token }` counts. Anything else (e.g. `{ email, started }` from the pre-OAuth build,
+  // or a hand-edited value) would look logged in but never load, so treat it as logged out.
+  const session = isSession(stored) ? stored : null
+  const [sessionExpired, setSessionExpired] = useState(false)
   const [language, setLanguage] = usePersistentState<Settings['language']>('language', 'EN')
-  const email = session?.email ?? null
-  const profile = useLoader<User>(session && `${session.email}#${session.started}`, () => api.getProfile(email!))
+
+  useEffect(() => {
+    if (stored !== null && !isSession(stored)) setSession(null)
+  }, [stored, setSession])
+
+  // Set during render so child effects (which run first) already send the token.
+  setAuthToken(session?.token ?? null)
+  const profile = useLoader<User>(session?.token ?? null, api.getMe)
   const { setData: setUser } = profile
 
+  const logout = useCallback(() => {
+    clearPersisted()
+    setSession(null)
+  }, [setSession])
+
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      logout()
+      setSessionExpired(true)
+    })
+  }, [logout])
+
   const settings = useMemo<Settings>(
-    () => ({ language, ...(profile.data?.settings ?? { wise: false, calendar: false, push: false, email: false, sms: false }) }),
+    () => ({ language, ...(profile.data?.settings ?? { push: false, email: false, sms: false }) }),
     [language, profile.data],
   )
 
   const value = useMemo(
     () => ({
       session,
+      sessionExpired,
       user: profile.data,
       status: profile.status,
       error: profile.error,
       reload: profile.reload,
-      login: async (e: string, password: string) => setSession({ ...(await api.login(e, password)), started: Date.now() }),
-      signup: async (input: Parameters<typeof api.signup>[0]) => setSession({ ...(await api.signup(input)), started: Date.now() }),
-      logout: () => {
-        clearPersisted()
-        setSession(null)
+      loginWithGoogle: async (credential: string) => {
+        const { token } = await api.loginWithGoogle(credential)
+        setSessionExpired(false)
+        setSession({ token })
       },
-      updateUser: async (patch: { fullName?: string; address?: string }) => {
-        if (email) setUser(await api.updateProfile(email, patch))
+      logout,
+      deleteAccount: async () => {
+        await api.deleteMe()
+        logout()
       },
-      setBudget: async (monthlyBudget: number) => {
-        if (email) setUser(await api.updateBudget(email, monthlyBudget))
-      },
+      updateUser: async (patch: ProfilePatch) => setUser(await api.updateMe(patch)),
       settings,
       setSetting: <K extends keyof Settings>(key: K, v: Settings[K]) => {
         if (key === 'language') return setLanguage(v as Settings['language'])
-        if (!email) return
         const k = key as keyof api.ServerSettings
         const flip = (on: boolean) => setUser((u) => (u ? { ...u, settings: { ...u.settings, [k]: on } } : u))
         flip(v as boolean)
-        api.updateSetting(email, k, v as boolean).catch((e) => {
+        api.updateMe({ [k]: v }).catch((e) => {
           flip(!v)
           toast(errorText(e), 'error')
         })
       },
     }),
-    [session, email, profile.data, profile.status, profile.error, profile.reload, settings, setSession, setLanguage, setUser, toast],
+    [session, sessionExpired, profile.data, profile.status, profile.error, profile.reload, settings, logout, setSession, setLanguage, setUser, toast],
   )
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
@@ -98,27 +123,38 @@ interface CaseData {
   tasks: Task[]
   payments: Payment[]
   notifications: AppNotification[]
+  plans: VisaPlan[]
+  forms: PrefilledForm[]
 }
+
+const loaders = {
+  documents: api.listDocuments,
+  tasks: api.listTasks,
+  payments: api.listPayments,
+  notifications: api.listNotifications,
+  plans: api.listPlans,
+  forms: api.listForms,
+} satisfies { [K in keyof CaseData]: () => Promise<CaseData[K]> }
 
 const loadCase = async (): Promise<CaseData> => {
-  const [documents, tasks, payments, notifications] = await Promise.all([
-    api.listDocuments(),
-    api.listTasks(),
-    api.listPayments(),
-    api.listNotifications(),
+  const [documents, tasks, payments, notifications, plans, forms] = await Promise.all([
+    loaders.documents(),
+    loaders.tasks(),
+    loaders.payments(),
+    loaders.notifications(),
+    loaders.plans(),
+    loaders.forms(),
   ])
-  return { documents, tasks, payments, notifications }
+  return { documents, tasks, payments, notifications, plans, forms }
 }
 
-const replaceById = <T extends { id: string }>(list: T[], item: T) => list.map((x) => (x.id === item.id ? item : x))
+const ANALYSIS_POLL_MS = 3000
 
 export function CaseProvider({ children }: { children: ReactNode }) {
-  const { session } = useAuth()
+  const { session, reload: reloadUser } = useAuth()
   const { toast } = useToast()
-  const data = useLoader<CaseData>(session && `${session.email}#${session.started}`, loadCase)
+  const data = useLoader<CaseData>(session?.token ?? null, loadCase)
   const { setData } = data
-  const [chat, setChat] = usePersistentState<ChatMessage[]>('chat', [])
-  const [thinking, setThinking] = useState(false)
 
   /** Updates one slice of the case; ignored before the first load. */
   const patch = useCallback(
@@ -126,6 +162,23 @@ export function CaseProvider({ children }: { children: ReactNode }) {
       setData((d) => (d ? { ...d, [key]: fn(d[key]) } : d)),
     [setData],
   )
+
+  /** Refetch slices the server changed on its own (agent tools, analysis, notifications). */
+  const refetch = useCallback(
+    (keys: (keyof CaseData)[]) => {
+      for (const k of keys) loaders[k]().then((v) => patch(k, () => v as never), () => {})
+    },
+    [patch],
+  )
+  const refreshNotifications = useCallback(() => refetch(['notifications']), [refetch])
+
+  // Document analysis runs in the background on the server; poll while any is pending.
+  const pending = data.data?.documents.some((d) => d.analysis?.status === 'pending') ?? false
+  useEffect(() => {
+    if (!pending) return
+    const t = setInterval(() => refetch(['documents', 'notifications']), ANALYSIS_POLL_MS)
+    return () => clearInterval(t)
+  }, [pending, refetch])
 
   /** Applies a change right away, then rolls it back if the server refuses it. */
   const optimistic = useCallback(
@@ -147,33 +200,54 @@ export function CaseProvider({ children }: { children: ReactNode }) {
       reload: data.reload,
 
       documents: d?.documents ?? [],
-      uploadDocument: async (doc, file, onPhase) => {
-        patch('documents', (ds) => replaceById(ds, { ...doc, status: 'checking' }))
+      uploadDocument: async (input, onProgress) => {
+        const doc = await api.uploadDocument(input, onProgress)
+        patch('documents', (ds) => [doc, ...ds])
+        refreshNotifications()
+        return doc
+      },
+      openDocument: async (doc) => {
+        // Open the tab now, while we still have the click; popup blockers allow it.
+        const tab = window.open('', '_blank')
         try {
-          const r = await api.uploadDocument(doc.id, file, (pct) => onPhase(pct < 100 ? 'uploading' : 'checking', pct))
-          patch('documents', (ds) => replaceById(ds, r.document))
-          onPhase('done', 100)
-          return { status: r.document.status === 'ready' ? 'ready' : 'rejected', checks: r.checks }
+          const url = URL.createObjectURL(await api.downloadDocument(doc.id))
+          if (tab) tab.location.href = url
+          else {
+            const a = document.createElement('a')
+            a.href = url
+            a.download = doc.fileName
+            a.click()
+          }
+          setTimeout(() => URL.revokeObjectURL(url), 60_000)
         } catch (e) {
-          patch('documents', (ds) => replaceById(ds, doc))
-          throw e
+          tab?.close()
+          toast(errorText(e), 'error')
         }
       },
-      requestDocument: async (id) => {
-        const updated = await api.requestDocument(id)
-        patch('documents', (ds) => replaceById(ds, updated))
+      deleteDocument: async (id) => {
+        await api.deleteDocument(id)
+        patch('documents', (ds) => ds.filter((x) => x.id !== id))
       },
-      payDocument: async (id) => {
-        const updated = await api.payDocument(id)
-        patch('documents', (ds) => replaceById(ds, updated))
-        // the server marks the matching payment as paid
-        const payments = await api.listPayments()
-        patch('payments', () => payments)
+      reanalyzeDocument: async (id) => {
+        const doc = await api.reanalyzeDocument(id)
+        patch('documents', (ds) => ds.map((x) => (x.id === id ? doc : x)))
+      },
+
+      plans: d?.plans ?? [],
+      forms: d?.forms ?? [],
+      deleteForm: async (id) => {
+        await api.deleteForm(id)
+        patch('forms', (fs) => fs.filter((f) => f.id !== id))
+      },
+      refresh: (what) => {
+        const keys = what.filter((w): w is keyof CaseData => w in loaders)
+        if (keys.length) refetch([...keys, 'notifications'])
+        if (what.includes('profile')) reloadUser()
       },
 
       tasks: d?.tasks ?? [],
-      addTask: async (title) => {
-        const task = await api.createTask(title)
+      addTask: async (title, due) => {
+        const task = await api.createTask(title, due)
         patch('tasks', (ts) => [task, ...ts])
       },
       toggleTask: (id) => {
@@ -197,9 +271,10 @@ export function CaseProvider({ children }: { children: ReactNode }) {
       },
 
       payments: d?.payments ?? [],
-      payVisaFee: async (title, amount) => {
-        const payment = await api.payVisaFee(title, amount)
+      recordPayment: async (title, amount) => {
+        const payment = await api.recordPayment(title, amount)
         patch('payments', (ps) => [payment, ...ps])
+        refreshNotifications()
       },
 
       notifications: d?.notifications ?? [],
@@ -221,23 +296,8 @@ export function CaseProvider({ children }: { children: ReactNode }) {
         )
       },
 
-      chat,
-      thinking,
-      ask: async (question) => {
-        setChat((c) => [...c, { id: uid('m'), role: 'user', text: question }])
-        setThinking(true)
-        try {
-          const reply = await api.askAssistant(question)
-          setChat((c) => [...c, { ...reply, id: uid('m') }])
-        } catch (e) {
-          toast(errorText(e), 'error')
-        } finally {
-          setThinking(false)
-        }
-      },
-      clearChat: () => setChat([]),
     }
-  }, [data.data, data.status, data.error, data.reload, patch, optimistic, chat, setChat, thinking, toast])
+  }, [data.data, data.status, data.error, data.reload, patch, optimistic, refetch, refreshNotifications, reloadUser, toast])
 
   return <CaseContext.Provider value={value}>{children}</CaseContext.Provider>
 }

@@ -1,68 +1,89 @@
 import { useState } from 'react'
+import { FileImage, FileText, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/primitives'
 import { Button } from '@/components/ui/Button'
-import { docStatusMeta } from '@/components/ui/status'
-import { useCase } from '@/store/context'
+import { Dialog } from '@/components/ui/Dialog'
+import { fileSize, shortDate } from '@/lib/format'
 import type { CaseDocument } from '@/lib/types'
-import { PayDialog, RequestDialog, UploadDialog } from './DocumentDialogs'
+import { useCase, useToast } from '@/store/context'
+import { AnalysisPanel } from './AnalysisPanel'
+import { expiryOf } from './expiry'
 
-const actionLabel = { request: 'Request', upload: 'Upload', pay: 'Pay with Wise' } as const
-const RENEWAL_FEE = 'Permit renewal fee'
-const RENEWAL_FEE_FALLBACK_EUR = 47
-
-/** Document rows with their actions wired to the request / upload / pay flows. */
-export function DocumentList({ documents, showReady = true }: { documents: CaseDocument[]; showReady?: boolean }) {
-  const { payDocument, payments } = useCase()
-  const fee = payments.find((p) => p.what === RENEWAL_FEE)?.amount ?? RENEWAL_FEE_FALLBACK_EUR
-  const [upload, setUpload] = useState<CaseDocument | null>(null)
-  const [request, setRequest] = useState<CaseDocument | null>(null)
-  const [pay, setPay] = useState<CaseDocument | null>(null)
-
-  const list = showReady ? documents : documents.filter((d) => d.status !== 'ready')
+/** Uploaded documents with open (inline preview in a new tab) and delete. */
+export function DocumentList({ documents, compact = false }: { documents: CaseDocument[]; compact?: boolean }) {
+  const { openDocument, deleteDocument } = useCase()
+  const { toast } = useToast()
+  const [confirm, setConfirm] = useState<CaseDocument | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   return (
     <>
       <ul className="divide-y divide-rose-200">
-        {list.map((d) => {
-          const meta = docStatusMeta[d.status]
-          const action = d.status === 'ready' || d.status === 'checking' ? undefined : d.action
+        {documents.map((d) => {
+          const expiry = expiryOf(d.expiresOn)
+          const Icon = d.contentType.startsWith('image/') ? FileImage : FileText
           return (
-            <li key={d.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5">
-              <div className="min-w-0 flex-1 basis-48">
-                <p className="text-sm font-semibold text-forest-950">{d.name}</p>
-                <p className="truncate text-xs text-muted">{d.status === 'ready' && d.fileName ? d.fileName : d.hint}</p>
+            <li key={d.id} className="flex flex-wrap items-start gap-x-3.5 gap-y-2 py-3">
+              <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-rose-100 text-brick-600">
+                <Icon className="size-5" aria-hidden />
+              </span>
+              <div className="min-w-0 flex-1 basis-40">
+                <p className="truncate text-sm font-semibold text-forest-950">{d.title}</p>
+                <p className="truncate text-xs text-muted">
+                  {d.category} · {compact ? shortDate(d.uploadedAt.slice(0, 10)) : `${d.fileName} · ${fileSize(d.size)} · uploaded ${shortDate(d.uploadedAt.slice(0, 10), { day: 'numeric', month: 'short', year: 'numeric' })}`}
+                </p>
+                {!compact && <AnalysisPanel doc={d} />}
               </div>
-              <Badge tone={meta.tone} className="min-w-[94px]">
-                {meta.label}
-              </Badge>
-              {action ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="min-w-[100px]"
-                  onClick={() => (action === 'upload' ? setUpload(d) : action === 'request' ? setRequest(d) : setPay(d))}
+              {expiry.state !== 'none' && <Badge tone={expiry.tone}>{expiry.label}</Badge>}
+              <Button variant="outline" size="sm" onClick={() => openDocument(d)}>
+                Open
+              </Button>
+              {!compact && (
+                <button
+                  type="button"
+                  onClick={() => setConfirm(d)}
+                  aria-label={`Delete ${d.title}`}
+                  className="grid size-8 shrink-0 place-items-center rounded-full text-forest-950/70 hover:bg-rose-100 hover:text-brick-600"
                 >
-                  {actionLabel[action]}
-                </Button>
-              ) : (
-                <Button variant="ghost" size="sm" className="min-w-[100px]" onClick={() => setUpload(d)}>
-                  Replace
-                </Button>
+                  <Trash2 className="size-[17px]" />
+                </button>
               )}
             </li>
           )
         })}
       </ul>
 
-      <UploadDialog doc={upload} onClose={() => setUpload(null)} />
-      <RequestDialog doc={request} onClose={() => setRequest(null)} />
-      <PayDialog
-        open={!!pay}
-        amount={fee}
-        what="Residence permit renewal fee · HUF 18,000"
-        onClose={() => setPay(null)}
-        onPay={() => (pay ? payDocument(pay.id) : Promise.resolve())}
-      />
+      <Dialog
+        open={!!confirm}
+        onClose={() => !deleting && setConfirm(null)}
+        title={`Delete ${confirm?.title ?? 'document'}?`}
+        description="The file is removed from storage. This can’t be undone."
+      >
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={() => setConfirm(null)} disabled={deleting}>
+            Keep it
+          </Button>
+          <Button
+            variant="accent"
+            loading={deleting}
+            onClick={async () => {
+              if (!confirm) return
+              setDeleting(true)
+              try {
+                await deleteDocument(confirm.id)
+                toast(`${confirm.title} deleted`)
+                setConfirm(null)
+              } catch (e) {
+                toast(e instanceof Error ? e.message : 'Delete failed. Try again.', 'error')
+              } finally {
+                setDeleting(false)
+              }
+            }}
+          >
+            Delete
+          </Button>
+        </div>
+      </Dialog>
     </>
   )
 }

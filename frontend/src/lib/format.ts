@@ -30,3 +30,22 @@ export function shortDate(iso: string, opts: Intl.DateTimeFormatOptions = { day:
 export function uid(prefix = 'id') {
   return `${prefix}_${Math.random().toString(36).slice(2, 9)}`
 }
+
+export function fileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+/** "9:00" today, "Yesterday", "Tue" this week, else "12 Oct". */
+export function timeAgo(iso: string, now = new Date()) {
+  const d = new Date(iso)
+  const mins = Math.round((now.getTime() - d.getTime()) / 60_000)
+  if (mins < 1) return 'Just now'
+  if (mins < 60) return `${mins}m ago`
+  if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit' })
+  const days = Math.round((now.getTime() - d.getTime()) / 86_400_000)
+  if (days <= 1) return 'Yesterday'
+  if (days < 7) return d.toLocaleDateString('en-GB', { weekday: 'short' })
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+}

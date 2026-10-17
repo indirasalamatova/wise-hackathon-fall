@@ -235,7 +235,16 @@ export function Segmented<T extends string>({
 
 /* -------------------------------------------------------------- Avatar */
 
-export function Avatar({ text, size = 'md' }: { text: string; size?: 'md' | 'xl' }) {
+export function Avatar({ text, src, size = 'md' }: { text: string; src?: string; size?: 'md' | 'xl' }) {
+  if (src)
+    return (
+      <img
+        src={src}
+        alt=""
+        referrerPolicy="no-referrer"
+        className={cn('shrink-0 rounded-full object-cover', size === 'xl' ? 'size-[70px]' : 'size-10')}
+      />
+    )
   return (
     <span
       aria-hidden

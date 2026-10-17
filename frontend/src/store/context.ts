@@ -1,22 +1,30 @@
 import { createContext, useContext } from 'react'
-import type { AppNotification, CaseDocument, ChatMessage, CheckPhase, DocCheck, Payment, Settings, Task, User } from '@/lib/types'
+import type { AppNotification, CaseDocument, DocumentCategory, Payment, PrefilledForm, ProfilePatch, Settings, Task, User, VisaPlan } from '@/lib/types'
 
 export type LoadStatus = 'idle' | 'loading' | 'ready' | 'error'
 
 export interface AuthContextValue {
-  /** Logged-in session. The profile behind it is loaded from the API into `user`. */
-  session: { email: string; started: number } | null
+  /** Signed-in session. The profile behind it is loaded from the API into `user`. */
+  session: { token: string } | null
+  /** True after the server rejected the token (expired, account deleted, secret rotated). */
+  sessionExpired: boolean
   user: User | null
   status: LoadStatus
   error: string | null
   reload: () => void
-  login: (email: string, password: string) => Promise<void>
-  signup: (input: { firstName: string; lastName: string; email: string; password: string }) => Promise<void>
+  loginWithGoogle: (credential: string) => Promise<void>
   logout: () => void
-  updateUser: (patch: { fullName?: string; address?: string }) => Promise<void>
-  setBudget: (monthlyBudget: number) => Promise<void>
+  deleteAccount: () => Promise<void>
+  updateUser: (patch: ProfilePatch) => Promise<void>
   settings: Settings
   setSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => void
+}
+
+export interface UploadInput {
+  file: File
+  title: string
+  category: DocumentCategory
+  expiresOn?: string
 }
 
 export interface CaseContextValue {
@@ -25,30 +33,28 @@ export interface CaseContextValue {
   reload: () => void
 
   documents: CaseDocument[]
-  uploadDocument: (
-    doc: CaseDocument,
-    file: File,
-    onPhase: (phase: CheckPhase, progress: number) => void,
-  ) => Promise<{ status: 'ready' | 'rejected'; checks: DocCheck[] }>
-  requestDocument: (id: string) => Promise<void>
-  payDocument: (id: string) => Promise<void>
+  uploadDocument: (input: UploadInput, onProgress: (pct: number) => void) => Promise<CaseDocument>
+  openDocument: (doc: CaseDocument) => Promise<void>
+  deleteDocument: (id: string) => Promise<void>
+  reanalyzeDocument: (id: string) => Promise<void>
+
+  plans: VisaPlan[]
+  forms: PrefilledForm[]
+  deleteForm: (id: string) => Promise<void>
+  /** Refetch what an agent turn changed (tasks, plans, forms, profile). */
+  refresh: (what: string[]) => void
 
   tasks: Task[]
-  addTask: (title: string) => Promise<void>
+  addTask: (title: string, due?: string) => Promise<void>
   toggleTask: (id: string) => void
   removeTask: (id: string) => void
 
   payments: Payment[]
-  payVisaFee: (title: string, amount: number) => Promise<void>
+  recordPayment: (title: string, amount: number) => Promise<void>
 
   notifications: AppNotification[]
   markAllRead: () => void
   markRead: (id: string) => void
-
-  chat: ChatMessage[]
-  ask: (question: string) => Promise<void>
-  thinking: boolean
-  clearChat: () => void
 }
 
 export interface ToastValue {

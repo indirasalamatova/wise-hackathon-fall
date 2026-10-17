@@ -1,6 +1,6 @@
 import os
+
 import aioboto3
-from fastapi import UploadFile
 from botocore.exceptions import ClientError
 
 S3_ENDPOINT_URL = os.getenv("S3_ENDPOINT_URL", "http://storage:9000")
@@ -10,39 +10,38 @@ S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "unbound-docs")
 
 session = aioboto3.Session()
 
+
+def _client():
+    return session.client(
+        "s3",
+        endpoint_url=S3_ENDPOINT_URL,
+        aws_access_key_id=S3_ACCESS_KEY,
+        aws_secret_access_key=S3_SECRET_KEY,
+    )
+
+
 class StorageService:
     @staticmethod
     async def ensure_bucket_exists() -> None:
-        async with session.client(
-            "s3",
-            endpoint_url=S3_ENDPOINT_URL,
-            aws_access_key_id=S3_ACCESS_KEY,
-            aws_secret_access_key=S3_SECRET_KEY,
-        ) as s3:
+        async with _client() as s3:
             try:
                 await s3.head_bucket(Bucket=S3_BUCKET_NAME)
             except ClientError:
                 await s3.create_bucket(Bucket=S3_BUCKET_NAME)
 
     @staticmethod
-    async def save_upload(file: UploadFile, doc_id: str) -> str:
-        await StorageService.ensure_bucket_exists()
-        ext = os.path.splitext(file.filename or "")[1]
-        object_key = f"documents/{doc_id}{ext}"
+    async def put(key: str, data: bytes, content_type: str) -> None:
+        async with _client() as s3:
+            await s3.put_object(Bucket=S3_BUCKET_NAME, Key=key, Body=data, ContentType=content_type)
 
-        file_bytes = await file.read()
+    @staticmethod
+    async def get(key: str) -> bytes:
+        async with _client() as s3:
+            obj = await s3.get_object(Bucket=S3_BUCKET_NAME, Key=key)
+            async with obj["Body"] as body:
+                return await body.read()
 
-        async with session.client(
-            "s3",
-            endpoint_url=S3_ENDPOINT_URL,
-            aws_access_key_id=S3_ACCESS_KEY,
-            aws_secret_access_key=S3_SECRET_KEY,
-        ) as s3:
-            await s3.put_object(
-                Bucket=S3_BUCKET_NAME,
-                Key=object_key,
-                Body=file_bytes,
-                ContentType=file.content_type or "application/octet-stream"
-            )
-
-        return f"{S3_BUCKET_NAME}/{object_key}"
+    @staticmethod
+    async def delete(key: str) -> None:
+        async with _client() as s3:
+            await s3.delete_object(Bucket=S3_BUCKET_NAME, Key=key)
