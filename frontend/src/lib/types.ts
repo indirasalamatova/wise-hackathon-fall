@@ -14,7 +14,7 @@ export interface User {
   studies: string
 }
 
-export type DocStatus = 'missing' | 'needs_update' | 'to_pay' | 'checking' | 'ready' | 'rejected'
+export type DocStatus = 'missing' | 'needs_update' | 'to_pay' | 'requested' | 'checking' | 'ready' | 'rejected'
 export type DocAction = 'request' | 'upload' | 'pay'
 
 export interface DocCheck {

@@ -4,7 +4,6 @@ import type {
   CountryCode,
   JourneyStage,
   Payment,
-  Settings,
   Task,
   User,
 } from './types'

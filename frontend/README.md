@@ -1,75 +1,39 @@
-# React + TypeScript + Vite
+# Unbound frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React 19 + Vite + TypeScript + Tailwind CSS v4. Design follows `../source_data/`
+(Canva app screens PDF + home deck PPTX).
 
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```bash
+npm install
+npm run dev      # http://localhost:5173
+npm run build
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+## Demo login
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+Any email + any password with 6+ characters. `wrongpass` shows the error state.
+In document upload, a file whose name contains `old` or `expired` fails the AI check.
+"Reset demo data" on the Profile page restores the seed data.
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Structure
 
 ```
+src/
+  index.css              design tokens (@theme): colors, fonts, radii
+  lib/
+    api.ts               mock backend (auth, AI document check, Wise payments, assistant) — swap for fetch()
+    mock-data.ts         seed case: user, documents, tasks, payments, countries
+    types.ts, format.ts
+  store/                 Auth / Case / Toast providers, localStorage persistence
+  components/
+    ui/                  Button, Card, Badge, Input, Toggle, Checkbox, Progress, Segmented, Dialog…
+    brand/               Logo, Flag
+    layout/              AppLayout (auth guard), Sidebar, Topbar (search, language, notifications), PublicHeader
+    case/                DocumentList + Upload / Request / Pay dialogs
+  pages/
+    public/              Landing, OptionsWizard, Login, Signup
+    app/                 Assistant, Journey, Documents, Finances, Costs, Todo, Profile
+```
+
+Routes: `/`, `/login`, `/signup`, `/app` (assistant), `/app/journey`, `/app/documents`,
+`/app/finances`, `/app/finances/costs`, `/app/todo`, `/app/profile`.
