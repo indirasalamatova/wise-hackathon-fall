@@ -10,6 +10,11 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U unbound_user -d unbound_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   storage:
     image: rustfs/rustfs:latest
@@ -31,6 +36,32 @@ services:
     container_name: unbound_redis
     ports:
       - "6379:6379"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: unbound_backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    environment:
+      DATABASE_URL: postgresql+asyncpg://unbound_user:unbound_password@postgres:5432/unbound_db
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://storage:9000
+      S3_ACCESS_KEY_ID: minioadmin
+      S3_SECRET_ACCESS_KEY: minioadmin
+      S3_BUCKET_NAME: unbound-docs
+      MOCK_TODAY: "2026-10-16"
+      CORS_ORIGINS: "http://localhost:5173,http://localhost:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      storage:
+        condition: service_started
+      redis:
+        condition: service_started
 
 volumes:
   postgres_data:

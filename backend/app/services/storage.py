@@ -1,20 +1,48 @@
-from minio import Minio
 import os
+import aioboto3
+from fastapi import UploadFile
+from botocore.exceptions import ClientError
 
-minio_client = Minio(
-    "localhost:9000",
-    access_key="minioadmin",
-    secret_key="minioadmin",
-    secure=False
-)
+S3_ENDPOINT_URL = os.getenv("S3_ENDPOINT_URL", "http://storage:9000")
+S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY_ID", "minioadmin")
+S3_SECRET_KEY = os.getenv("S3_SECRET_ACCESS_KEY", "minioadmin")
+S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "unbound-docs")
 
-BUCKET_NAME = "unbound-documents"
+session = aioboto3.Session()
 
-def init_storage():
-    if not minio_client.bucket_exists(BUCKET_NAME):
-        minio_client.make_bucket(BUCKET_NAME)
+class StorageService:
+    @staticmethod
+    async def ensure_bucket_exists() -> None:
+        async with session.client(
+            "s3",
+            endpoint_url=S3_ENDPOINT_URL,
+            aws_access_key_id=S3_ACCESS_KEY,
+            aws_secret_access_key=S3_SECRET_KEY,
+        ) as s3:
+            try:
+                await s3.head_bucket(Bucket=S3_BUCKET_NAME)
+            except ClientError:
+                await s3.create_bucket(Bucket=S3_BUCKET_NAME)
 
-def upload_file(file_path: str, object_name: str):
-    init_storage()
-    minio_client.fput_object(BUCKET_NAME, object_name, file_path)
-    return minio_client.presigned_get_object(BUCKET_NAME, object_name)
+    @staticmethod
+    async def save_upload(file: UploadFile, doc_id: str) -> str:
+        await StorageService.ensure_bucket_exists()
+        ext = os.path.splitext(file.filename or "")[1]
+        object_key = f"documents/{doc_id}{ext}"
+
+        file_bytes = await file.read()
+
+        async with session.client(
+            "s3",
+            endpoint_url=S3_ENDPOINT_URL,
+            aws_access_key_id=S3_ACCESS_KEY,
+            aws_secret_access_key=S3_SECRET_KEY,
+        ) as s3:
+            await s3.put_object(
+                Bucket=S3_BUCKET_NAME,
+                Key=object_key,
+                Body=file_bytes,
+                ContentType=file.content_type or "application/octet-stream"
+            )
+
+        return f"{S3_BUCKET_NAME}/{object_key}"
